@@ -148,7 +148,8 @@ var thresholds = alertThresholds[env]
 
 var evaluationFrequency = 'PT5M'     // Every 5 minutes
 var windowSize = 'PT15M'             // 15-minute window
-var muteActionsDuration = env == 'prod' ? 'PT15M' : 'PT30M' // Shorter mute for prod
+// Note: muteActionsDuration not used because it conflicts with autoMitigate
+// Use autoMitigate for automatic alert resolution when condition clears
 
 // ============================================================================
 // Action Group
@@ -211,7 +212,7 @@ resource alertWeb5xx 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview'
       ]
     }
     autoMitigate: true
-    muteActionsDuration: muteActionsDuration
+    // muteActionsDuration removed - conflicts with autoMitigate
     actions: {
       actionGroups: [actionGroup.id]
     }
@@ -249,7 +250,7 @@ resource alertApi5xx 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview'
       ]
     }
     autoMitigate: true
-    muteActionsDuration: muteActionsDuration
+    // muteActionsDuration removed - conflicts with autoMitigate
     actions: {
       actionGroups: [actionGroup.id]
     }
@@ -292,7 +293,7 @@ resource alertWebLatency 'Microsoft.Insights/scheduledQueryRules@2023-03-15-prev
       ]
     }
     autoMitigate: true
-    muteActionsDuration: muteActionsDuration
+    // muteActionsDuration removed - conflicts with autoMitigate
     actions: {
       actionGroups: [actionGroup.id]
     }
@@ -331,7 +332,7 @@ resource alertApiLatency 'Microsoft.Insights/scheduledQueryRules@2023-03-15-prev
       ]
     }
     autoMitigate: true
-    muteActionsDuration: muteActionsDuration
+    // muteActionsDuration removed - conflicts with autoMitigate
     actions: {
       actionGroups: [actionGroup.id]
     }
@@ -372,7 +373,7 @@ resource alertWebExceptions 'Microsoft.Insights/scheduledQueryRules@2023-03-15-p
       ]
     }
     autoMitigate: true
-    muteActionsDuration: muteActionsDuration
+    // muteActionsDuration removed - conflicts with autoMitigate
     actions: {
       actionGroups: [actionGroup.id]
     }
@@ -409,7 +410,7 @@ resource alertApiExceptions 'Microsoft.Insights/scheduledQueryRules@2023-03-15-p
       ]
     }
     autoMitigate: true
-    muteActionsDuration: muteActionsDuration
+    // muteActionsDuration removed - conflicts with autoMitigate
     actions: {
       actionGroups: [actionGroup.id]
     }
@@ -451,7 +452,7 @@ resource alertFuncFailures 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
       ]
     }
     autoMitigate: true
-    muteActionsDuration: muteActionsDuration
+    // muteActionsDuration removed - conflicts with autoMitigate
     actions: {
       actionGroups: [actionGroup.id]
     }
@@ -488,7 +489,7 @@ resource alertFuncExceptions 'Microsoft.Insights/scheduledQueryRules@2023-03-15-
       ]
     }
     autoMitigate: true
-    muteActionsDuration: muteActionsDuration
+    // muteActionsDuration removed - conflicts with autoMitigate
     actions: {
       actionGroups: [actionGroup.id]
     }
@@ -535,7 +536,7 @@ resource alertDependencyFailures 'Microsoft.Insights/scheduledQueryRules@2023-03
       ]
     }
     autoMitigate: true
-    muteActionsDuration: muteActionsDuration
+    // muteActionsDuration removed - conflicts with autoMitigate
     actions: {
       actionGroups: [actionGroup.id]
     }
