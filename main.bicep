@@ -42,8 +42,25 @@ param tagPolicyEffect string = 'Audit'
 // Variables
 // ============================================================================
 
-var resourceGroupName = 'rg-mon-${env}-${workload}'
-var logAnalyticsWorkspaceName = 'law-${env}-${workload}'
+// Location suffix for resource naming (e.g., westeurope → weu)
+var locationSuffixes = {
+  westeurope: 'weu'
+  eastus: 'eus'
+  eastus2: 'eus2'
+  centralus: 'cus'
+  northeurope: 'neu'
+  uksouth: 'uks'
+  ukwest: 'ukw'
+}
+var locationSuffix = contains(locationSuffixes, location) ? locationSuffixes[location] : substring(location, 0, 3)
+
+// Naming convention: {prefix}-{workload}-{env}-{region}
+var resourceGroupName = 'rg-${workload}-${env}-${locationSuffix}'
+var logAnalyticsWorkspaceName = 'law-${workload}-${env}-${locationSuffix}'
+
+// App Insights naming: appi-{component}-{workload_suffix}-{env}-{region}
+// Extract suffix from workload (e.g., obs-demo → demo)
+var workloadSuffix = contains(workload, '-') ? last(split(workload, '-')) : workload
 
 var requiredTags = {
   env: env
@@ -73,7 +90,7 @@ module appInsightsWeb 'modules/appinsights.bicep' = {
   name: 'appinsights-web-${env}-${workload}'
   scope: resourceGroup(resourceGroupName)
   params: {
-    appInsightsName: 'appi-${env}-${workload}-web'
+    appInsightsName: 'appi-web-${workloadSuffix}-${env}-${locationSuffix}'
     location: location
     logAnalyticsWorkspaceId: foundation.outputs.logAnalyticsWorkspaceId
     applicationType: 'web'
@@ -86,7 +103,7 @@ module appInsightsApi 'modules/appinsights.bicep' = {
   name: 'appinsights-api-${env}-${workload}'
   scope: resourceGroup(resourceGroupName)
   params: {
-    appInsightsName: 'appi-${env}-${workload}-api'
+    appInsightsName: 'appi-api-${workloadSuffix}-${env}-${locationSuffix}'
     location: location
     logAnalyticsWorkspaceId: foundation.outputs.logAnalyticsWorkspaceId
     applicationType: 'web'
@@ -99,7 +116,7 @@ module appInsightsFunc 'modules/appinsights.bicep' = {
   name: 'appinsights-func-${env}-${workload}'
   scope: resourceGroup(resourceGroupName)
   params: {
-    appInsightsName: 'appi-${env}-${workload}-func'
+    appInsightsName: 'appi-func-${workloadSuffix}-${env}-${locationSuffix}'
     location: location
     logAnalyticsWorkspaceId: foundation.outputs.logAnalyticsWorkspaceId
     applicationType: 'web'

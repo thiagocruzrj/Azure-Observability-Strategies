@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logAnalyticsWorkspaceId": {
+      "value": "/subscriptions/96c57020-cece-485b-a9a8-25214593bf2d/resourceGroups/rg-obs-demo-dev-weu/providers/Microsoft.OperationalInsights/workspaces/law-obs-demo-dev-weu"
+    },
+    "websiteResourceIds": {
+      "value": [
+        "/subscriptions/96c57020-cece-485b-a9a8-25214593bf2d/resourceGroups/rg-obs-demo-dev-weu/providers/Microsoft.Web/sites/web-obs-demo-dev-weu",
+        "/subscriptions/96c57020-cece-485b-a9a8-25214593bf2d/resourceGroups/rg-obs-demo-dev-weu/providers/Microsoft.Web/sites/api-obs-demo-dev-weu"
+      ]
+    },
+    "enableIpSecAudit": {
+      "value": false
+    },
+    "diagnosticSettingNameSuffix": {
+      "value": "law-diag"
+    }
+  }
+}
