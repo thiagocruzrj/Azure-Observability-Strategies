@@ -1,0 +1,25 @@
+{
+  "version": "2.0",
+  "telemetryMode": "OpenTelemetry",
+  "logging": {
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true,
+        "maxTelemetryItemsPerSecond": 20
+      }
+    },
+    "logLevel": {
+      "default": "Information",
+      "Host.Results": "Error",
+      "Function": "Information",
+      "Host.Aggregator": "Trace",
+      "Microsoft": "Warning",
+      "System.Net.Http.HttpClient": "Warning"
+    }
+  },
+  "extensions": {
+    "http": {
+      "routePrefix": "api"
+    }
+  }
+}
