@@ -47,6 +47,27 @@ param alertEmailAddresses array = []
 @description('Microsoft Teams webhook URL for alert notifications (optional)')
 param teamsWebhookUrl string = ''
 
+@description('URL for availability testing (required if enableAvailabilityTest is true)')
+param availabilityTestUrl string = ''
+
+@description('Enable availability test (requires availabilityTestUrl)')
+param enableAvailabilityTest bool = false
+
+@description('Azure AD principal IDs for Monitoring Reader role (read-only access)')
+param monitoringReadersPrincipalIds array = []
+
+@description('Azure AD principal IDs for Monitoring Contributor role (modify access)')
+param monitoringContributorsPrincipalIds array = []
+
+@description('Enable custom and log-based metrics (business metrics, P95 latency, etc.)')
+param enableCustomMetrics bool = false
+
+@description('Enable business metric alerts (orders/min, failed orders, active sessions)')
+param enableBusinessMetricAlerts bool = true
+
+@description('Enable performance log-based metric alerts (P95 latency, slow dependencies)')
+param enablePerformanceMetricAlerts bool = true
+
 // ============================================================================
 // Variables
 // ============================================================================
@@ -105,6 +126,7 @@ module appInsightsWeb 'modules/appinsights.bicep' = {
     applicationType: 'web'
     tags: requiredTags
   }
+  dependsOn: [foundation]
 }
 
 // Application Insights: API component
@@ -118,6 +140,7 @@ module appInsightsApi 'modules/appinsights.bicep' = {
     applicationType: 'web'
     tags: requiredTags
   }
+  dependsOn: [foundation]
 }
 
 // Application Insights: Function component
@@ -131,6 +154,7 @@ module appInsightsFunc 'modules/appinsights.bicep' = {
     applicationType: 'web'
     tags: requiredTags
   }
+  dependsOn: [foundation]
 }
 
 // Policy: Enforce required tags on the monitoring resource group
@@ -153,6 +177,7 @@ module policyTags 'modules/policy-tags.bicep' = {
 module opsLayer 'modules/ops-alerting-workbooks.bicep' = if (enableOpsLayer && !empty(alertEmailAddresses)) {
   name: 'ops-layer-${env}-${workload}'
   scope: resourceGroup(resourceGroupName)
+  dependsOn: [foundation]
   params: {
     env: env
     workload: workload
@@ -164,7 +189,46 @@ module opsLayer 'modules/ops-alerting-workbooks.bicep' = if (enableOpsLayer && !
     emailAddresses: alertEmailAddresses
     teamsWebhookUrl: teamsWebhookUrl
     enableDependencyAlerts: env == 'prod'  // Enable dependency alerts only in prod
-    enableAvailabilityTest: false          // Enable separately with availabilityTestUrl
+    enableAvailabilityTest: enableAvailabilityTest && !empty(availabilityTestUrl)
+    availabilityTestUrl: availabilityTestUrl
+    tags: requiredTags
+  }
+}
+
+// ============================================================================
+// Security: RBAC Role Assignments
+// ============================================================================
+
+module securityRbac 'modules/security-observability.bicep' = if (!empty(monitoringReadersPrincipalIds) || !empty(monitoringContributorsPrincipalIds)) {
+  name: 'security-rbac-${env}-${workload}'
+  scope: resourceGroup(resourceGroupName)
+  dependsOn: [foundation]
+  params: {
+    monitoringReadersPrincipalIds: monitoringReadersPrincipalIds
+    monitoringContributorsPrincipalIds: monitoringContributorsPrincipalIds
+    readersPrincipalType: 'User'
+    contributorsPrincipalType: 'User'
+  }
+}
+
+// ============================================================================
+// Custom Metrics: Log-Based and Business Metrics
+// ============================================================================
+
+module customMetrics 'modules/custom-metrics.bicep' = if (enableCustomMetrics && enableOpsLayer && !empty(alertEmailAddresses)) {
+  name: 'custom-metrics-${env}-${workload}'
+  scope: resourceGroup(resourceGroupName)
+  dependsOn: [foundation, opsLayer]
+  params: {
+    env: env
+    workload: workload
+    location: location
+    logAnalyticsWorkspaceId: foundation.outputs.logAnalyticsWorkspaceId
+    appInsightsWebId: appInsightsWeb.outputs.resourceId
+    appInsightsApiId: appInsightsApi.outputs.resourceId
+    actionGroupId: opsLayer.outputs.actionGroupId
+    enableBusinessMetricAlerts: enableBusinessMetricAlerts
+    enablePerformanceMetricAlerts: enablePerformanceMetricAlerts
     tags: requiredTags
   }
 }
@@ -193,3 +257,6 @@ output actionGroupId string = (enableOpsLayer && !empty(alertEmailAddresses)) ? 
 
 @description('Workbook URL (if ops layer enabled)')
 output workbookUrl string = (enableOpsLayer && !empty(alertEmailAddresses)) ? opsLayer.outputs.workbookUrl : 'not-deployed'
+
+@description('Number of custom/log-based metrics deployed')
+output customMetricsCount int = (enableCustomMetrics && enableOpsLayer && !empty(alertEmailAddresses)) ? customMetrics.outputs.metricsCount : 0

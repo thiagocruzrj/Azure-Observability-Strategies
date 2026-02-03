@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.38.33.27573",
-      "templateHash": "9084353517432822530"
+      "templateHash": "17671561566220516728"
     }
   },
   "parameters": {
@@ -87,6 +87,55 @@
       "defaultValue": "",
       "metadata": {
         "description": "Microsoft Teams webhook URL for alert notifications (optional)"
+      }
+    },
+    "availabilityTestUrl": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "URL for availability testing (required if enableAvailabilityTest is true)"
+      }
+    },
+    "enableAvailabilityTest": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable availability test (requires availabilityTestUrl)"
+      }
+    },
+    "monitoringReadersPrincipalIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Azure AD principal IDs for Monitoring Reader role (read-only access)"
+      }
+    },
+    "monitoringContributorsPrincipalIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Azure AD principal IDs for Monitoring Contributor role (modify access)"
+      }
+    },
+    "enableCustomMetrics": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable custom and log-based metrics (business metrics, P95 latency, etc.)"
+      }
+    },
+    "enableBusinessMetricAlerts": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable business metric alerts (orders/min, failed orders, active sessions)"
+      }
+    },
+    "enablePerformanceMetricAlerts": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable performance log-based metric alerts (P95 latency, slow dependencies)"
       }
     }
   },
@@ -1017,7 +1066,10 @@
             "value": "[equals(parameters('env'), 'prod')]"
           },
           "enableAvailabilityTest": {
-            "value": false
+            "value": "[and(parameters('enableAvailabilityTest'), not(empty(parameters('availabilityTestUrl'))))]"
+          },
+          "availabilityTestUrl": {
+            "value": "[parameters('availabilityTestUrl')]"
           },
           "tags": {
             "value": "[variables('requiredTags')]"
@@ -1899,6 +1951,638 @@
         "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-web-{0}-{1}', parameters('env'), parameters('workload')))]",
         "[subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload')))]"
       ]
+    },
+    {
+      "condition": "[or(not(empty(parameters('monitoringReadersPrincipalIds'))), not(empty(parameters('monitoringContributorsPrincipalIds'))))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('security-rbac-{0}-{1}', parameters('env'), parameters('workload'))]",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "monitoringReadersPrincipalIds": {
+            "value": "[parameters('monitoringReadersPrincipalIds')]"
+          },
+          "monitoringContributorsPrincipalIds": {
+            "value": "[parameters('monitoringContributorsPrincipalIds')]"
+          },
+          "readersPrincipalType": {
+            "value": "User"
+          },
+          "contributorsPrincipalType": {
+            "value": "User"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "2132677314375326202"
+            }
+          },
+          "parameters": {
+            "monitoringReadersPrincipalIds": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Array of Azure AD principal IDs (users, groups, or service principals) for read-only monitoring access"
+              }
+            },
+            "monitoringContributorsPrincipalIds": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Array of Azure AD principal IDs (users, groups, or service principals) for monitoring contributor access"
+              }
+            },
+            "readersPrincipalType": {
+              "type": "string",
+              "defaultValue": "Group",
+              "allowedValues": [
+                "User",
+                "Group",
+                "ServicePrincipal"
+              ],
+              "metadata": {
+                "description": "Principal type for readers (User, Group, or ServicePrincipal)"
+              }
+            },
+            "contributorsPrincipalType": {
+              "type": "string",
+              "defaultValue": "Group",
+              "allowedValues": [
+                "User",
+                "Group",
+                "ServicePrincipal"
+              ],
+              "metadata": {
+                "description": "Principal type for contributors (User, Group, or ServicePrincipal)"
+              }
+            }
+          },
+          "variables": {
+            "monitoringReaderRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '43d0d8ad-25c7-4714-9337-8ba259a9fe05')]",
+            "monitoringContributorRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '749f88d5-cbae-40b8-bcfc-e573ddc772fa')]"
+          },
+          "resources": [
+            {
+              "copy": {
+                "name": "monitoringReaderAssignments",
+                "count": "[length(parameters('monitoringReadersPrincipalIds'))]"
+              },
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, variables('monitoringReaderRoleId'), parameters('monitoringReadersPrincipalIds')[copyIndex()])]",
+              "properties": {
+                "roleDefinitionId": "[variables('monitoringReaderRoleId')]",
+                "principalId": "[parameters('monitoringReadersPrincipalIds')[copyIndex()]]",
+                "principalType": "[parameters('readersPrincipalType')]",
+                "description": "Monitoring Reader access for observability - assigned via Monitoring Golden Path"
+              }
+            },
+            {
+              "copy": {
+                "name": "monitoringContributorAssignments",
+                "count": "[length(parameters('monitoringContributorsPrincipalIds'))]"
+              },
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, variables('monitoringContributorRoleId'), parameters('monitoringContributorsPrincipalIds')[copyIndex()])]",
+              "properties": {
+                "roleDefinitionId": "[variables('monitoringContributorRoleId')]",
+                "principalId": "[parameters('monitoringContributorsPrincipalIds')[copyIndex()]]",
+                "principalType": "[parameters('contributorsPrincipalType')]",
+                "description": "Monitoring Contributor access for observability - assigned via Monitoring Golden Path"
+              }
+            }
+          ],
+          "outputs": {
+            "readerRoleAssignmentIds": {
+              "type": "array",
+              "metadata": {
+                "description": "Array of role assignment IDs for monitoring readers"
+              },
+              "copy": {
+                "count": "[length(parameters('monitoringReadersPrincipalIds'))]",
+                "input": "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, variables('monitoringReaderRoleId'), parameters('monitoringReadersPrincipalIds')[copyIndex()]))]"
+              }
+            },
+            "contributorRoleAssignmentIds": {
+              "type": "array",
+              "metadata": {
+                "description": "Array of role assignment IDs for monitoring contributors"
+              },
+              "copy": {
+                "count": "[length(parameters('monitoringContributorsPrincipalIds'))]",
+                "input": "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, variables('monitoringContributorRoleId'), parameters('monitoringContributorsPrincipalIds')[copyIndex()]))]"
+              }
+            },
+            "totalRoleAssignments": {
+              "type": "int",
+              "metadata": {
+                "description": "Total number of role assignments created"
+              },
+              "value": "[add(length(parameters('monitoringReadersPrincipalIds')), length(parameters('monitoringContributorsPrincipalIds')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload')))]"
+      ]
+    },
+    {
+      "condition": "[and(and(parameters('enableCustomMetrics'), parameters('enableOpsLayer')), not(empty(parameters('alertEmailAddresses'))))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('custom-metrics-{0}-{1}', parameters('env'), parameters('workload'))]",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "env": {
+            "value": "[parameters('env')]"
+          },
+          "workload": {
+            "value": "[parameters('workload')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[reference(subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+          },
+          "appInsightsWebId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-web-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.resourceId.value]"
+          },
+          "appInsightsApiId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-api-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.resourceId.value]"
+          },
+          "actionGroupId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('ops-layer-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.actionGroupId.value]"
+          },
+          "enableBusinessMetricAlerts": {
+            "value": "[parameters('enableBusinessMetricAlerts')]"
+          },
+          "enablePerformanceMetricAlerts": {
+            "value": "[parameters('enablePerformanceMetricAlerts')]"
+          },
+          "tags": {
+            "value": "[variables('requiredTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "3207895744409521872"
+            }
+          },
+          "parameters": {
+            "env": {
+              "type": "string",
+              "allowedValues": [
+                "dev",
+                "prod"
+              ],
+              "metadata": {
+                "description": "Environment name (dev or prod)"
+              }
+            },
+            "workload": {
+              "type": "string",
+              "metadata": {
+                "description": "Workload identifier for naming resources"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for resources"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics Workspace"
+              }
+            },
+            "appInsightsWebId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Insights for web component"
+              }
+            },
+            "appInsightsApiId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Insights for API component"
+              }
+            },
+            "actionGroupId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Action Group for notifications"
+              }
+            },
+            "enableBusinessMetricAlerts": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable business metric alerts (orders, revenue, etc.)"
+              }
+            },
+            "enablePerformanceMetricAlerts": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Enable performance log-based metric alerts"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply to resources"
+              }
+            }
+          },
+          "variables": {
+            "metricPrefix": "[format('metric-{0}-{1}', parameters('env'), parameters('workload'))]",
+            "severityWarning": "[if(equals(parameters('env'), 'prod'), 2, 3)]",
+            "severityError": "[if(equals(parameters('env'), 'prod'), 1, 2)]",
+            "orderProcessingTimeThresholdMs": "[if(equals(parameters('env'), 'prod'), 2000, 5000)]",
+            "errorRateThresholdPercent": "[if(equals(parameters('env'), 'prod'), 1, 5)]",
+            "dependencyFailureRateThreshold": "[if(equals(parameters('env'), 'prod'), 2, 10)]"
+          },
+          "resources": [
+            {
+              "condition": "[parameters('enableBusinessMetricAlerts')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('{0}-orders-per-minute', variables('metricPrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "Orders Per Minute",
+                "description": "Log-based metric: Count of order requests per minute from API",
+                "severity": "[variables('severityWarning')]",
+                "enabled": true,
+                "evaluationFrequency": "PT5M",
+                "scopes": [
+                  "[parameters('appInsightsApiId')]"
+                ],
+                "windowSize": "PT5M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            // Count order-related requests per minute\r\n            requests\r\n            | where timestamp > ago(5m)\r\n            | where name contains \"orders\" or url contains \"/orders\"\r\n            | where success == true\r\n            | summarize OrderCount = count() by bin(timestamp, 1m)\r\n            | summarize AvgOrdersPerMinute = avg(OrderCount)\r\n          ",
+                      "timeAggregation": "Average",
+                      "metricMeasureColumn": "AvgOrdersPerMinute",
+                      "operator": "LessThan",
+                      "threshold": "[if(equals(parameters('env'), 'prod'), 1, 0)]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupId')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[parameters('enableBusinessMetricAlerts')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('{0}-failed-orders-rate', variables('metricPrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "Failed Orders Rate (%)",
+                "description": "Log-based metric: Percentage of failed order requests",
+                "severity": "[variables('severityError')]",
+                "enabled": true,
+                "evaluationFrequency": "PT5M",
+                "scopes": [
+                  "[parameters('appInsightsApiId')]"
+                ],
+                "windowSize": "PT15M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            // Calculate order failure rate\r\n            requests\r\n            | where timestamp > ago(15m)\r\n            | where name contains \"orders\" or url contains \"/orders\"\r\n            | summarize \r\n                TotalOrders = count(),\r\n                FailedOrders = countif(success == false)\r\n            | extend FailureRate = iff(TotalOrders > 0, (FailedOrders * 100.0) / TotalOrders, 0.0)\r\n            | project FailureRate\r\n          ",
+                      "timeAggregation": "Average",
+                      "metricMeasureColumn": "FailureRate",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('errorRateThresholdPercent')]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 2,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupId')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[parameters('enableBusinessMetricAlerts')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('{0}-active-sessions', variables('metricPrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "Active User Sessions",
+                "description": "Log-based metric: Count of unique user sessions in last 15 minutes",
+                "severity": 3,
+                "enabled": true,
+                "evaluationFrequency": "PT5M",
+                "scopes": [
+                  "[parameters('appInsightsWebId')]"
+                ],
+                "windowSize": "PT15M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            // Count unique sessions\r\n            requests\r\n            | where timestamp > ago(15m)\r\n            | where isnotempty(session_Id)\r\n            | summarize ActiveSessions = dcount(session_Id)\r\n            | project ActiveSessions\r\n          ",
+                      "timeAggregation": "Average",
+                      "metricMeasureColumn": "ActiveSessions",
+                      "operator": "LessThan",
+                      "threshold": "[if(equals(parameters('env'), 'prod'), 5, 0)]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 4,
+                        "minFailingPeriodsToAlert": 3
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupId')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[parameters('enablePerformanceMetricAlerts')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('{0}-p95-response-time', variables('metricPrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "P95 Response Time (ms)",
+                "description": "Log-based metric: 95th percentile response time across all endpoints",
+                "severity": "[variables('severityWarning')]",
+                "enabled": true,
+                "evaluationFrequency": "PT5M",
+                "scopes": [
+                  "[parameters('appInsightsWebId')]",
+                  "[parameters('appInsightsApiId')]"
+                ],
+                "windowSize": "PT15M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            // Calculate P95 response time\r\n            requests\r\n            | where timestamp > ago(15m)\r\n            | where success == true\r\n            | summarize P95_ms = percentile(duration, 95)\r\n            | project P95_ms\r\n          ",
+                      "timeAggregation": "Average",
+                      "metricMeasureColumn": "P95_ms",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('orderProcessingTimeThresholdMs')]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupId')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[parameters('enablePerformanceMetricAlerts')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('{0}-slow-dependencies', variables('metricPrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "Slow External Dependencies",
+                "description": "Log-based metric: Count of dependencies exceeding latency threshold",
+                "severity": "[variables('severityWarning')]",
+                "enabled": true,
+                "evaluationFrequency": "PT5M",
+                "scopes": [
+                  "[parameters('appInsightsApiId')]"
+                ],
+                "windowSize": "PT15M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            // Count slow dependencies by type\r\n            dependencies\r\n            | where timestamp > ago(15m)\r\n            | where duration > 3000 // Over 3 seconds\r\n            | summarize SlowDependencies = count() by type\r\n            | summarize TotalSlowDeps = sum(SlowDependencies)\r\n            | project TotalSlowDeps\r\n          ",
+                      "timeAggregation": "Total",
+                      "metricMeasureColumn": "TotalSlowDeps",
+                      "operator": "GreaterThan",
+                      "threshold": "[if(equals(parameters('env'), 'prod'), 10, 50)]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 2,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupId')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[parameters('enablePerformanceMetricAlerts')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('{0}-dependency-failure-rate', variables('metricPrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "Dependency Failure Rate by Type (%)",
+                "description": "Log-based metric: Failure rate per dependency type (SQL, HTTP, etc.)",
+                "severity": "[variables('severityError')]",
+                "enabled": true,
+                "evaluationFrequency": "PT5M",
+                "scopes": [
+                  "[parameters('appInsightsApiId')]"
+                ],
+                "windowSize": "PT15M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            // Calculate failure rate per dependency type\r\n            dependencies\r\n            | where timestamp > ago(15m)\r\n            | summarize \r\n                TotalCalls = count(),\r\n                FailedCalls = countif(success == false)\r\n                by type\r\n            | extend FailureRate = iff(TotalCalls > 0, (FailedCalls * 100.0) / TotalCalls, 0.0)\r\n            | summarize MaxFailureRate = max(FailureRate)\r\n            | project MaxFailureRate\r\n          ",
+                      "timeAggregation": "Average",
+                      "metricMeasureColumn": "MaxFailureRate",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('dependencyFailureRateThreshold')]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 2,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupId')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[parameters('enablePerformanceMetricAlerts')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('{0}-unique-exceptions', variables('metricPrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "Unique Exception Types",
+                "description": "Log-based metric: Count of distinct exception types (spike indicates new issues)",
+                "severity": "[variables('severityWarning')]",
+                "enabled": true,
+                "evaluationFrequency": "PT5M",
+                "scopes": [
+                  "[parameters('appInsightsWebId')]",
+                  "[parameters('appInsightsApiId')]"
+                ],
+                "windowSize": "PT30M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            // Count unique exception types\r\n            exceptions\r\n            | where timestamp > ago(30m)\r\n            | summarize \r\n                UniqueTypes = dcount(type),\r\n                TotalExceptions = count()\r\n            | project UniqueTypes\r\n          ",
+                      "timeAggregation": "Average",
+                      "metricMeasureColumn": "UniqueTypes",
+                      "operator": "GreaterThan",
+                      "threshold": "[if(equals(parameters('env'), 'prod'), 5, 10)]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[parameters('actionGroupId')]"
+                  ]
+                }
+              }
+            },
+            {
+              "condition": "[parameters('enableBusinessMetricAlerts')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('{0}-custom-events-rate', variables('metricPrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "Custom Business Events Rate",
+                "description": "Log-based metric: Rate of custom business events per minute",
+                "severity": 3,
+                "enabled": true,
+                "evaluationFrequency": "PT5M",
+                "scopes": [
+                  "[parameters('appInsightsWebId')]",
+                  "[parameters('appInsightsApiId')]"
+                ],
+                "windowSize": "PT15M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            // Track custom events by name\r\n            customEvents\r\n            | where timestamp > ago(15m)\r\n            | summarize EventCount = count() by bin(timestamp, 1m), name\r\n            | summarize AvgEventsPerMinute = avg(EventCount)\r\n            | project AvgEventsPerMinute\r\n          ",
+                      "timeAggregation": "Average",
+                      "metricMeasureColumn": "AvgEventsPerMinute",
+                      "operator": "LessThan",
+                      "threshold": 0,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": []
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "logBasedMetricIds": {
+              "type": "array",
+              "metadata": {
+                "description": "List of deployed log-based metric alert IDs"
+              },
+              "value": [
+                "[if(parameters('enableBusinessMetricAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-orders-per-minute', variables('metricPrefix'))), '')]",
+                "[if(parameters('enableBusinessMetricAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-failed-orders-rate', variables('metricPrefix'))), '')]",
+                "[if(parameters('enableBusinessMetricAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-active-sessions', variables('metricPrefix'))), '')]",
+                "[if(parameters('enablePerformanceMetricAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-p95-response-time', variables('metricPrefix'))), '')]",
+                "[if(parameters('enablePerformanceMetricAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-slow-dependencies', variables('metricPrefix'))), '')]",
+                "[if(parameters('enablePerformanceMetricAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-dependency-failure-rate', variables('metricPrefix'))), '')]",
+                "[if(parameters('enablePerformanceMetricAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-unique-exceptions', variables('metricPrefix'))), '')]",
+                "[if(parameters('enableBusinessMetricAlerts'), resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-custom-events-rate', variables('metricPrefix'))), '')]"
+              ]
+            },
+            "metricsCount": {
+              "type": "int",
+              "metadata": {
+                "description": "Number of log-based metrics deployed"
+              },
+              "value": "[add(if(parameters('enableBusinessMetricAlerts'), 4, 0), if(parameters('enablePerformanceMetricAlerts'), 4, 0))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-api-{0}-{1}', parameters('env'), parameters('workload')))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-web-{0}-{1}', parameters('env'), parameters('workload')))]",
+        "[subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload')))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('ops-layer-{0}-{1}', parameters('env'), parameters('workload')))]"
+      ]
     }
   ],
   "outputs": {
@@ -1950,6 +2634,13 @@
         "description": "Workbook URL (if ops layer enabled)"
       },
       "value": "[if(and(parameters('enableOpsLayer'), not(empty(parameters('alertEmailAddresses')))), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('ops-layer-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.workbookUrl.value, 'not-deployed')]"
+    },
+    "customMetricsCount": {
+      "type": "int",
+      "metadata": {
+        "description": "Number of custom/log-based metrics deployed"
+      },
+      "value": "[if(and(and(parameters('enableCustomMetrics'), parameters('enableOpsLayer')), not(empty(parameters('alertEmailAddresses')))), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('custom-metrics-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.metricsCount.value, 0)]"
     }
   }
 }

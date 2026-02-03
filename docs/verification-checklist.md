@@ -2,7 +2,7 @@
 
 > **Project**: Azure Observability Strategies  
 > **Date**: February 3, 2026 (Updated)  
-> **Environment**: `rg-obs-demo-dev-weu` (West Europe)
+> **Environments**: `rg-obs-demo-dev-weu` (Dev) | `rg-obs-demo-prod-weu` (Prod) - West Europe
 
 ---
 
@@ -183,16 +183,16 @@ az monitor scheduled-query list -g rg-obs-demo-dev-weu --query "[].name" -o tsv
 |-------|--------|----------------|
 | **Test alert notification flow** | ✅ DONE | See "Alert Notification Test" section below |
 | **Verify workbook visualizations** | ✅ DONE | Workbook opens in portal, sections render |
-| **RBAC role assignments** | ⬜ TODO | Assign actual AAD group IDs in prod |
-| **Production deployment** | ⬜ TODO | Deploy to `rg-obs-demo-prod-weu` |
+| **RBAC role assignments** | ✅ DONE | See "Production Deployment" section below |
+| **Production deployment** | ✅ DONE | See "Production Deployment" section below |
 
 ### Medium Priority
 
 | Check | Status | Recommendation |
 |-------|--------|----------------|
-| **Availability test** | ⬜ Optional | Enable `enableAvailabilityTest=true` for prod |
+| **Availability test** | ✅ DONE | Deployed in prod: `avail-prod-obs-demo-web` |
 | **Teams webhook** | ⬜ Optional | Add `teamsWebhookUrl` for real-time alerts |
-| **Dependency alerts** | ⬜ Optional | Enable `enableDependencyAlerts=true` for prod |
+| **Dependency alerts** | ✅ DONE | Deployed in prod: `alrt-prod-obs-demo-all-dependency-failures` |
 | **Budget alerts** | ✅ DONE | `budget-obs-demo-dev` deployed ($100/month) |
 | **Integrate ops module in main.bicep** | ✅ DONE | Module uncommented, parameters added |
 
@@ -200,15 +200,98 @@ az monitor scheduled-query list -g rg-obs-demo-dev-weu --query "[].name" -o tsv
 
 | Check | Status | Recommendation |
 |-------|--------|----------------|
-| **Custom metrics** | ⬜ Optional | Add business-specific metrics |
-| **Log-based metrics** | ⬜ Optional | Create metrics from log queries |
+| **Custom metrics** | ✅ DONE | 8 log-based metrics deployed (see "Custom Metrics" section below) |
+| **Log-based metrics** | ✅ DONE | Business + performance metrics from log queries |
 | **Grafana integration** | ⬜ Optional | Azure Managed Grafana for dashboards |
 | **PagerDuty/ServiceNow** | ⬜ Optional | Add Logic App for ticket creation |
 | **Chaos engineering** | ⬜ Optional | Test alert thresholds with fault injection |
 
 ---
 
-## 💰 Budget Alert Configuration (February 3, 2026)
+## 📊 Custom & Log-Based Metrics (February 3, 2026)
+
+### Overview
+
+Log-based metrics derive numeric values from Log Analytics queries, enabling:
+- Business metrics (orders/min, failure rates, active sessions)
+- Performance metrics not available in standard metrics (P95 latency)
+- Custom alerting on computed values
+
+### Deployment
+
+```bash
+az deployment sub create \
+  --location westeurope \
+  --template-file main.bicep \
+  --parameters env=dev \
+  --parameters workload=obs-demo \
+  --parameters enableCustomMetrics=true \
+  --parameters enableBusinessMetricAlerts=true \
+  --parameters enablePerformanceMetricAlerts=true
+```
+
+### Business Metrics (4 alerts)
+
+| Metric | Description | Threshold (Dev) | Alert Action |
+|--------|-------------|-----------------|--------------|
+| `metric-dev-obs-demo-orders-per-minute` | Order throughput from API | < 0 orders | Action Group |
+| `metric-dev-obs-demo-failed-orders-rate` | Order failure percentage | > 5% | Action Group |
+| `metric-dev-obs-demo-active-sessions` | Unique user sessions (Web) | < 0 sessions | Action Group |
+| `metric-dev-obs-demo-custom-events-rate` | Custom business events | Informational | None (dashboard only) |
+
+### Performance Metrics (4 alerts)
+
+| Metric | Description | Threshold (Dev) | Alert Action |
+|--------|-------------|-----------------|--------------|
+| `metric-dev-obs-demo-p95-response-time-web` | 95th percentile latency (Web) | > 5000ms | Action Group |
+| `metric-dev-obs-demo-p95-response-time-api` | 95th percentile latency (API) | > 5000ms | Action Group |
+| `metric-dev-obs-demo-slow-dependencies` | Dependencies > 3s latency | > 50 count | Action Group |
+| `metric-dev-obs-demo-unique-exceptions` | Distinct exception types | > 10 types | Action Group |
+
+### Production Thresholds
+
+| Metric | Dev Threshold | Prod Threshold |
+|--------|---------------|----------------|
+| Orders Per Minute | < 0 | < 5 |
+| Failed Orders Rate | > 5% | > 1% |
+| P95 Response Time | > 5000ms | > 2000ms |
+| Slow Dependencies | > 50 | > 10 |
+| Unique Exceptions | > 10 | > 5 |
+
+### Key KQL Queries Used
+
+**P95 Response Time:**
+```kql
+requests
+| where success == true
+| summarize P95_ms = percentile(duration, 95)
+```
+
+**Order Failure Rate:**
+```kql
+requests
+| where name contains "orders" or url contains "/orders"
+| summarize 
+    TotalOrders = count(),
+    FailedOrders = countif(success == false)
+| extend FailureRate = iff(TotalOrders > 0, (FailedOrders * 100.0) / TotalOrders, 0.0)
+```
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `modules/custom-metrics.bicep` | Log-based metrics module (~430 lines) |
+
+### Verification
+
+```bash
+# List all custom metrics
+az monitor scheduled-query list -g rg-obs-demo-dev-weu \
+  --query "[?contains(name, 'metric-')].{Name:name, Severity:severity, Enabled:enabled}" -o table
+
+# Result: 8 metrics deployed (4 business + 4 performance)
+```
 
 ### Budget Details
 
@@ -381,6 +464,142 @@ https://portal.azure.com/#@/resource/subscriptions/96c57020-cece-485b-a9a8-25214
 
 ---
 
+## 🚀 Production Deployment (February 3, 2026)
+
+### Deployment Summary
+
+| Property | Value |
+|----------|-------|
+| Resource Group | `rg-obs-demo-prod-weu` |
+| Location | West Europe |
+| Log Retention | 90 days |
+| Deployment Status | ✅ Succeeded |
+
+### Deployment Command
+
+```bash
+az deployment sub create \
+  --location westeurope \
+  --template-file main.bicep \
+  --parameters env=prod \
+  --parameters workload=obs-demo \
+  --parameters location=westeurope \
+  --parameters logRetentionDays=90 \
+  --parameters tagPolicyEffect=Audit \
+  --parameters enableOpsLayer=true \
+  --parameters alertEmailAddresses='["ops-team@contoso.com"]' \
+  --parameters enableAvailabilityTest=true \
+  --parameters availabilityTestUrl="https://web-obs-demo-prod-weu.azurewebsites.net/health" \
+  --parameters monitoringReadersPrincipalIds='["91fe9225-d185-41ae-8975-3dfff2192620"]' \
+  --parameters monitoringContributorsPrincipalIds='["91fe9225-d185-41ae-8975-3dfff2192620"]' \
+  --parameters owner=Thiago \
+  --parameters costCenter=cc132
+```
+
+### RBAC Role Assignments ✅
+
+| Principal | Role | Type |
+|-----------|------|------|
+| `v-tjusto_microsoft.com#EXT#@fdpo.onmicrosoft.com` | Monitoring Reader | User |
+| `v-tjusto_microsoft.com#EXT#@fdpo.onmicrosoft.com` | Monitoring Contributor | User |
+
+**Verification Command:**
+```bash
+az role assignment list -g rg-obs-demo-prod-weu \
+  --query "[].{Principal:principalName, Role:roleDefinitionName, Type:principalType}" -o table
+```
+
+**Note:** Changed `principalType` from `'Group'` to `'User'` in `main.bicep` to fix `UnmatchedPrincipalType` error.
+
+### Availability Test ✅
+
+| Property | Value |
+|----------|-------|
+| Test Name | `avail-prod-obs-demo-web` |
+| URL | `https://web-obs-demo-prod-weu.azurewebsites.net/health` |
+| Status | Enabled |
+| Timeout | 120 seconds |
+
+**Verification Command:**
+```bash
+az monitor app-insights web-test list -g rg-obs-demo-prod-weu \
+  --query "[].{Name:name, Enabled:enabled}" -o table
+```
+
+### Dependency Alerts ✅
+
+| Property | Value |
+|----------|-------|
+| Alert Name | `alrt-prod-obs-demo-all-dependency-failures` |
+| Severity | 2 (Warning) |
+| Status | Enabled |
+| Scope | All App Insights components |
+
+**Production Alerts Deployed (9 total):**
+
+| Alert | Severity | Status |
+|-------|----------|--------|
+| `alrt-prod-obs-demo-web-5xx` | 0 (Critical) | ✅ Enabled |
+| `alrt-prod-obs-demo-api-5xx` | 0 (Critical) | ✅ Enabled |
+| `alrt-prod-obs-demo-func-failures` | 0 (Critical) | ✅ Enabled |
+| `alrt-prod-obs-demo-web-latency` | 1 (Error) | ✅ Enabled |
+| `alrt-prod-obs-demo-api-latency` | 1 (Error) | ✅ Enabled |
+| `alrt-prod-obs-demo-web-exceptions` | 1 (Error) | ✅ Enabled |
+| `alrt-prod-obs-demo-api-exceptions` | 1 (Error) | ✅ Enabled |
+| `alrt-prod-obs-demo-func-exceptions` | 1 (Error) | ✅ Enabled |
+| `alrt-prod-obs-demo-all-dependency-failures` | 2 (Warning) | ✅ Enabled |
+
+**Verification Command:**
+```bash
+az monitor scheduled-query list -g rg-obs-demo-prod-weu \
+  --query "[].{Name:name, Severity:severity, Enabled:enabled}" -o table
+```
+
+### Issues Fixed During Deployment
+
+1. **ResourceGroupNotFound Error**
+   - **Cause:** Modules with `scope: resourceGroup(resourceGroupName)` evaluated before foundation module created the RG
+   - **Fix:** Added `dependsOn: [foundation]` to all child modules (appInsightsWeb, appInsightsApi, appInsightsFunc, opsLayer, securityRbac)
+
+2. **UnmatchedPrincipalType Error**
+   - **Cause:** RBAC assignments configured with `principalType: 'Group'` but user principal ID provided
+   - **Fix:** Changed to `principalType: 'User'` in `main.bicep` securityRbac module call
+
+### Production Resources Deployed
+
+```
+rg-obs-demo-prod-weu/
+│
+├── 📊 MONITORING FOUNDATION
+│   ├── law-obs-demo-prod-weu         (Log Analytics Workspace - 90 day retention)
+│   ├── appi-web-demo-prod-weu        (Application Insights - Web)
+│   ├── appi-api-demo-prod-weu        (Application Insights - API)
+│   └── appi-func-demo-prod-weu       (Application Insights - Functions)
+│
+├── 🏷️ GOVERNANCE
+│   └── assign-require-tags-prod-obs-demo (Azure Policy Assignment)
+│
+├── 🔐 SECURITY
+│   ├── Monitoring Reader role assignment
+│   └── Monitoring Contributor role assignment
+│
+└── 🔔 OPERATIONAL LAYER
+    ├── ag-mon-prod-obs-demo           (Action Group)
+    ├── avail-prod-obs-demo-web        (Availability Test) ← NEW
+    ├── alrt-prod-obs-demo-web-5xx     (Alert Rule)
+    ├── alrt-prod-obs-demo-api-5xx     (Alert Rule)
+    ├── alrt-prod-obs-demo-web-latency (Alert Rule)
+    ├── alrt-prod-obs-demo-api-latency (Alert Rule)
+    ├── alrt-prod-obs-demo-web-exceptions (Alert Rule)
+    ├── alrt-prod-obs-demo-api-exceptions (Alert Rule)
+    ├── alrt-prod-obs-demo-func-failures  (Alert Rule)
+    ├── alrt-prod-obs-demo-func-exceptions (Alert Rule)
+    ├── alrt-prod-obs-demo-all-dependency-failures (Alert Rule) ← NEW
+    └── 254e9a8d-... (workbook)        (Operations Dashboard)
+```
+
+---
+
 ## Deployed Resources Summary
 
 ```
@@ -493,12 +712,14 @@ curl https://func-demo-dev-weu.azurewebsites.net/api/process
 
 | Module | File | Lines | Status |
 |--------|------|-------|--------|
-| Foundation | `modules/foundation.bicep` | ~200 | ✅ Deployed |
-| App Insights | `modules/appinsights.bicep` | ~150 | ✅ Deployed |
-| Policy Tags | `modules/policy-tags.bicep` | ~100 | ✅ Deployed |
-| Security/RBAC | `modules/security-observability.bicep` | ~415 | 📝 Documented (deploy with AAD IDs) |
-| Ops Layer | `modules/ops-alerting-workbooks.bicep` | ~930 | ✅ Deployed |
+| Foundation | `modules/foundation.bicep` | ~200 | ✅ Deployed (dev + prod) |
+| App Insights | `modules/appinsights.bicep` | ~150 | ✅ Deployed (dev + prod) |
+| Policy Tags | `modules/policy-tags.bicep` | ~100 | ✅ Deployed (dev + prod) |
+| Security/RBAC | `modules/security-observability.bicep` | ~415 | ✅ Deployed (prod) |
+| Ops Layer | `modules/ops-alerting-workbooks.bicep` | ~930 | ✅ Deployed (dev + prod) |
+| Budget Alerts | `modules/budget-alerts.bicep` | ~130 | ✅ Deployed (dev) |
+| Custom Metrics | `modules/custom-metrics.bicep` | ~430 | ✅ Deployed (dev) |
 
 ---
 
-*Last updated: February 2, 2026*
+*Last updated: February 3, 2026*
