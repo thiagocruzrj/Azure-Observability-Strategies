@@ -38,6 +38,15 @@ param logRetentionDays int = 30
 @allowed(['Audit', 'Deny'])
 param tagPolicyEffect string = 'Audit'
 
+@description('Enable operational layer (alerts, action groups, workbook)')
+param enableOpsLayer bool = true
+
+@description('Email addresses for alert notifications (required if enableOpsLayer is true)')
+param alertEmailAddresses array = []
+
+@description('Microsoft Teams webhook URL for alert notifications (optional)')
+param teamsWebhookUrl string = ''
+
 // ============================================================================
 // Variables
 // ============================================================================
@@ -137,24 +146,28 @@ module policyTags 'modules/policy-tags.bicep' = {
   dependsOn: [foundation]
 }
 
-// Operational Layer: Alerts, Action Groups, and Workbook (optional, deploy separately)
-// Uncomment and configure when App Insights resources are deployed
-// module opsLayer 'modules/ops-alerting-workbooks.bicep' = {
-//   name: 'ops-layer-${env}-${workload}'
-//   scope: resourceGroup(resourceGroupName)
-//   params: {
-//     env: env
-//     workload: workload
-//     location: location
-//     logAnalyticsWorkspaceId: foundation.outputs.logAnalyticsWorkspaceId
-//     appInsightsWebId: appInsightsWeb.outputs.resourceId
-//     appInsightsApiId: appInsightsApi.outputs.resourceId
-//     appInsightsFuncId: appInsightsFunc.outputs.resourceId
-//     emailAddresses: ['ops-team@company.com']
-//     teamsWebhookUrl: ''
-//     tags: requiredTags
-//   }
-// }
+// ============================================================================
+// Operational Layer: Alerts, Action Groups, and Workbook
+// ============================================================================
+
+module opsLayer 'modules/ops-alerting-workbooks.bicep' = if (enableOpsLayer && !empty(alertEmailAddresses)) {
+  name: 'ops-layer-${env}-${workload}'
+  scope: resourceGroup(resourceGroupName)
+  params: {
+    env: env
+    workload: workload
+    location: location
+    logAnalyticsWorkspaceId: foundation.outputs.logAnalyticsWorkspaceId
+    appInsightsWebId: appInsightsWeb.outputs.resourceId
+    appInsightsApiId: appInsightsApi.outputs.resourceId
+    appInsightsFuncId: appInsightsFunc.outputs.resourceId
+    emailAddresses: alertEmailAddresses
+    teamsWebhookUrl: teamsWebhookUrl
+    enableDependencyAlerts: env == 'prod'  // Enable dependency alerts only in prod
+    enableAvailabilityTest: false          // Enable separately with availabilityTestUrl
+    tags: requiredTags
+  }
+}
 
 // ============================================================================
 // Outputs
@@ -174,3 +187,9 @@ output resourceGroupName string = resourceGroupName
 
 @description('Log Analytics Workspace resource ID')
 output logAnalyticsWorkspaceId string = foundation.outputs.logAnalyticsWorkspaceId
+
+@description('Action Group ID (if ops layer enabled)')
+output actionGroupId string = (enableOpsLayer && !empty(alertEmailAddresses)) ? opsLayer.outputs.actionGroupId : 'not-deployed'
+
+@description('Workbook URL (if ops layer enabled)')
+output workbookUrl string = (enableOpsLayer && !empty(alertEmailAddresses)) ? opsLayer.outputs.workbookUrl : 'not-deployed'

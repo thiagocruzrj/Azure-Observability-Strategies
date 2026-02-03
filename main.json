@@ -1,0 +1,1955 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.38.33.27573",
+      "templateHash": "9084353517432822530"
+    }
+  },
+  "parameters": {
+    "env": {
+      "type": "string",
+      "allowedValues": [
+        "dev",
+        "prod"
+      ],
+      "metadata": {
+        "description": "Environment name (dev or prod)"
+      }
+    },
+    "workload": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 20,
+      "metadata": {
+        "description": "Workload identifier for naming resources"
+      }
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "Owner team or individual responsible for the resources"
+      }
+    },
+    "costCenter": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "Cost center code for billing purposes"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "eastus",
+      "metadata": {
+        "description": "Azure region for all resources"
+      }
+    },
+    "logRetentionDays": {
+      "type": "int",
+      "defaultValue": 30,
+      "minValue": 7,
+      "maxValue": 730,
+      "metadata": {
+        "description": "Log Analytics Workspace retention in days (dev: 14 recommended, prod: 30+ recommended)"
+      }
+    },
+    "tagPolicyEffect": {
+      "type": "string",
+      "defaultValue": "Audit",
+      "allowedValues": [
+        "Audit",
+        "Deny"
+      ],
+      "metadata": {
+        "description": "Policy effect for tag enforcement (Audit or Deny)"
+      }
+    },
+    "enableOpsLayer": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable operational layer (alerts, action groups, workbook)"
+      }
+    },
+    "alertEmailAddresses": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Email addresses for alert notifications (required if enableOpsLayer is true)"
+      }
+    },
+    "teamsWebhookUrl": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Microsoft Teams webhook URL for alert notifications (optional)"
+      }
+    }
+  },
+  "variables": {
+    "locationSuffixes": {
+      "westeurope": "weu",
+      "eastus": "eus",
+      "eastus2": "eus2",
+      "centralus": "cus",
+      "northeurope": "neu",
+      "uksouth": "uks",
+      "ukwest": "ukw"
+    },
+    "locationSuffix": "[if(contains(variables('locationSuffixes'), parameters('location')), variables('locationSuffixes')[parameters('location')], substring(parameters('location'), 0, 3))]",
+    "resourceGroupName": "[format('rg-{0}-{1}-{2}', parameters('workload'), parameters('env'), variables('locationSuffix'))]",
+    "logAnalyticsWorkspaceName": "[format('law-{0}-{1}-{2}', parameters('workload'), parameters('env'), variables('locationSuffix'))]",
+    "workloadSuffix": "[if(contains(parameters('workload'), '-'), last(split(parameters('workload'), '-')), parameters('workload'))]",
+    "requiredTags": {
+      "env": "[parameters('env')]",
+      "workload": "[parameters('workload')]",
+      "owner": "[parameters('owner')]",
+      "costCenter": "[parameters('costCenter')]"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('foundation-{0}-{1}', parameters('env'), parameters('workload'))]",
+      "location": "[deployment().location]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "resourceGroupName": {
+            "value": "[variables('resourceGroupName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logAnalyticsWorkspaceName": {
+            "value": "[variables('logAnalyticsWorkspaceName')]"
+          },
+          "logRetentionDays": {
+            "value": "[parameters('logRetentionDays')]"
+          },
+          "tags": {
+            "value": "[variables('requiredTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "11852140933184005415"
+            }
+          },
+          "parameters": {
+            "resourceGroupName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the monitoring resource group"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for all resources"
+              }
+            },
+            "logAnalyticsWorkspaceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Log Analytics Workspace"
+              }
+            },
+            "logRetentionDays": {
+              "type": "int",
+              "defaultValue": 30,
+              "minValue": 7,
+              "maxValue": 730,
+              "metadata": {
+                "description": "Log Analytics Workspace retention in days (dev: 14 recommended, prod: 30+ recommended)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply to all resources"
+              }
+            }
+          },
+          "resources": {
+            "monitoringResourceGroup": {
+              "type": "Microsoft.Resources/resourceGroups",
+              "apiVersion": "2024-03-01",
+              "name": "[parameters('resourceGroupName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]"
+            },
+            "logAnalyticsWorkspace": {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[format('logAnalyticsWorkspace-{0}', uniqueString('logAnalyticsWorkspace', deployment().name))]",
+              "resourceGroup": "[parameters('resourceGroupName')]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "workspaceName": {
+                    "value": "[parameters('logAnalyticsWorkspaceName')]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "retentionInDays": {
+                    "value": "[parameters('logRetentionDays')]"
+                  },
+                  "tags": {
+                    "value": "[parameters('tags')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.38.33.27573",
+                      "templateHash": "6360268414619665210"
+                    }
+                  },
+                  "parameters": {
+                    "workspaceName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Name of the Log Analytics Workspace"
+                      }
+                    },
+                    "location": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Azure region for the workspace"
+                      }
+                    },
+                    "retentionInDays": {
+                      "type": "int",
+                      "defaultValue": 30,
+                      "minValue": 7,
+                      "maxValue": 730,
+                      "metadata": {
+                        "description": "Data retention in days (dev: 14 recommended, prod: 30+ recommended)"
+                      }
+                    },
+                    "tags": {
+                      "type": "object",
+                      "metadata": {
+                        "description": "Tags to apply to the workspace"
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.OperationalInsights/workspaces",
+                      "apiVersion": "2023-09-01",
+                      "name": "[parameters('workspaceName')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]",
+                      "properties": {
+                        "sku": {
+                          "name": "PerGB2018"
+                        },
+                        "retentionInDays": "[parameters('retentionInDays')]",
+                        "features": {
+                          "enableLogAccessUsingOnlyResourcePermissions": true
+                        },
+                        "workspaceCapping": {
+                          "dailyQuotaGb": -1
+                        },
+                        "publicNetworkAccessForIngestion": "Enabled",
+                        "publicNetworkAccessForQuery": "Enabled"
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "workspaceId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Resource ID of the Log Analytics Workspace"
+                      },
+                      "value": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+                    },
+                    "workspaceName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Name of the Log Analytics Workspace"
+                      },
+                      "value": "[parameters('workspaceName')]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "monitoringResourceGroup"
+              ]
+            }
+          },
+          "outputs": {
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics Workspace"
+              },
+              "value": "[reference('logAnalyticsWorkspace').outputs.workspaceId.value]"
+            },
+            "resourceGroupName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the monitoring resource group"
+              },
+              "value": "[parameters('resourceGroupName')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('appinsights-web-{0}-{1}', parameters('env'), parameters('workload'))]",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "appInsightsName": {
+            "value": "[format('appi-web-{0}-{1}-{2}', variables('workloadSuffix'), parameters('env'), variables('locationSuffix'))]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[reference(subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+          },
+          "applicationType": {
+            "value": "web"
+          },
+          "tags": {
+            "value": "[variables('requiredTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "4753313238991056526"
+            }
+          },
+          "parameters": {
+            "appInsightsName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Application Insights resource"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the resource"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics Workspace to attach to"
+              }
+            },
+            "applicationType": {
+              "type": "string",
+              "defaultValue": "web",
+              "allowedValues": [
+                "web",
+                "other"
+              ],
+              "metadata": {
+                "description": "Type of application being monitored"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply to the resource"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[parameters('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "[parameters('applicationType')]",
+              "properties": {
+                "Application_Type": "[parameters('applicationType')]",
+                "WorkspaceResourceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "IngestionMode": "LogAnalytics",
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled",
+                "RetentionInDays": 90
+              }
+            }
+          ],
+          "outputs": {
+            "connectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Connection string for the Application Insights resource"
+              },
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+            },
+            "resourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Insights resource"
+              },
+              "value": "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Application Insights resource"
+              },
+              "value": "[parameters('appInsightsName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('appinsights-api-{0}-{1}', parameters('env'), parameters('workload'))]",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "appInsightsName": {
+            "value": "[format('appi-api-{0}-{1}-{2}', variables('workloadSuffix'), parameters('env'), variables('locationSuffix'))]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[reference(subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+          },
+          "applicationType": {
+            "value": "web"
+          },
+          "tags": {
+            "value": "[variables('requiredTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "4753313238991056526"
+            }
+          },
+          "parameters": {
+            "appInsightsName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Application Insights resource"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the resource"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics Workspace to attach to"
+              }
+            },
+            "applicationType": {
+              "type": "string",
+              "defaultValue": "web",
+              "allowedValues": [
+                "web",
+                "other"
+              ],
+              "metadata": {
+                "description": "Type of application being monitored"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply to the resource"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[parameters('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "[parameters('applicationType')]",
+              "properties": {
+                "Application_Type": "[parameters('applicationType')]",
+                "WorkspaceResourceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "IngestionMode": "LogAnalytics",
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled",
+                "RetentionInDays": 90
+              }
+            }
+          ],
+          "outputs": {
+            "connectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Connection string for the Application Insights resource"
+              },
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+            },
+            "resourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Insights resource"
+              },
+              "value": "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Application Insights resource"
+              },
+              "value": "[parameters('appInsightsName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('appinsights-func-{0}-{1}', parameters('env'), parameters('workload'))]",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "appInsightsName": {
+            "value": "[format('appi-func-{0}-{1}-{2}', variables('workloadSuffix'), parameters('env'), variables('locationSuffix'))]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[reference(subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+          },
+          "applicationType": {
+            "value": "web"
+          },
+          "tags": {
+            "value": "[variables('requiredTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "4753313238991056526"
+            }
+          },
+          "parameters": {
+            "appInsightsName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Application Insights resource"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the resource"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics Workspace to attach to"
+              }
+            },
+            "applicationType": {
+              "type": "string",
+              "defaultValue": "web",
+              "allowedValues": [
+                "web",
+                "other"
+              ],
+              "metadata": {
+                "description": "Type of application being monitored"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply to the resource"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[parameters('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "[parameters('applicationType')]",
+              "properties": {
+                "Application_Type": "[parameters('applicationType')]",
+                "WorkspaceResourceId": "[parameters('logAnalyticsWorkspaceId')]",
+                "IngestionMode": "LogAnalytics",
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled",
+                "RetentionInDays": 90
+              }
+            }
+          ],
+          "outputs": {
+            "connectionString": {
+              "type": "string",
+              "metadata": {
+                "description": "Connection string for the Application Insights resource"
+              },
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+            },
+            "resourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Insights resource"
+              },
+              "value": "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]"
+            },
+            "name": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Application Insights resource"
+              },
+              "value": "[parameters('appInsightsName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('policy-tags-{0}-{1}', parameters('env'), parameters('workload'))]",
+      "location": "[deployment().location]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "resourceGroupName": {
+            "value": "[variables('resourceGroupName')]"
+          },
+          "env": {
+            "value": "[parameters('env')]"
+          },
+          "workload": {
+            "value": "[parameters('workload')]"
+          },
+          "policyEffect": {
+            "value": "[parameters('tagPolicyEffect')]"
+          },
+          "requiredTagNames": {
+            "value": [
+              "env",
+              "workload",
+              "owner",
+              "costCenter"
+            ]
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "8175867091637676398"
+            }
+          },
+          "parameters": {
+            "resourceGroupName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the resource group to assign policy to"
+              }
+            },
+            "env": {
+              "type": "string",
+              "metadata": {
+                "description": "Environment name for naming the policy"
+              }
+            },
+            "workload": {
+              "type": "string",
+              "metadata": {
+                "description": "Workload name for naming the policy"
+              }
+            },
+            "policyEffect": {
+              "type": "string",
+              "defaultValue": "Audit",
+              "allowedValues": [
+                "Audit",
+                "Deny"
+              ],
+              "metadata": {
+                "description": "Policy effect: Audit (warning only) or Deny (block deployment)"
+              }
+            },
+            "requiredTagNames": {
+              "type": "array",
+              "metadata": {
+                "description": "List of required tag names that must exist on resources"
+              }
+            }
+          },
+          "variables": {
+            "policyDefinitionName": "[format('policy-require-tags-{0}-{1}', parameters('env'), parameters('workload'))]"
+          },
+          "resources": {
+            "policyDefinition": {
+              "type": "Microsoft.Authorization/policyDefinitions",
+              "apiVersion": "2023-04-01",
+              "name": "[variables('policyDefinitionName')]",
+              "properties": {
+                "displayName": "[format('Require mandatory tags for {0}-{1}', parameters('env'), parameters('workload'))]",
+                "description": "[format('Enforces that resources have the required tags: {0}. Effect: {1}', join(parameters('requiredTagNames'), ', '), parameters('policyEffect'))]",
+                "policyType": "Custom",
+                "mode": "Indexed",
+                "metadata": {
+                  "category": "Tags",
+                  "version": "1.0.0"
+                },
+                "parameters": {
+                  "effect": {
+                    "type": "String",
+                    "metadata": {
+                      "displayName": "Effect",
+                      "description": "Enable or disable the execution of the policy"
+                    },
+                    "allowedValues": [
+                      "Audit",
+                      "Deny"
+                    ],
+                    "defaultValue": "[parameters('policyEffect')]"
+                  }
+                },
+                "policyRule": {
+                  "if": {
+                    "copy": [
+                      {
+                        "name": "anyOf",
+                        "count": "[length(parameters('requiredTagNames'))]",
+                        "input": {
+                          "field": "[format('tags[''{0}'']', parameters('requiredTagNames')[copyIndex('anyOf')])]",
+                          "exists": "false"
+                        }
+                      }
+                    ]
+                  },
+                  "then": {
+                    "effect": "[[parameters('effect')]"
+                  }
+                }
+              }
+            },
+            "policyAssignmentModule": {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[format('policyAssignmentModule-{0}', uniqueString('policyAssignmentModule', deployment().name))]",
+              "resourceGroup": "[parameters('resourceGroupName')]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "policyDefinitionId": {
+                    "value": "[subscriptionResourceId('Microsoft.Authorization/policyDefinitions', variables('policyDefinitionName'))]"
+                  },
+                  "env": {
+                    "value": "[parameters('env')]"
+                  },
+                  "workload": {
+                    "value": "[parameters('workload')]"
+                  },
+                  "policyEffect": {
+                    "value": "[parameters('policyEffect')]"
+                  },
+                  "requiredTagNames": {
+                    "value": "[parameters('requiredTagNames')]"
+                  },
+                  "resourceGroupName": {
+                    "value": "[parameters('resourceGroupName')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.38.33.27573",
+                      "templateHash": "12027066609779976128"
+                    }
+                  },
+                  "parameters": {
+                    "policyDefinitionId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Policy definition resource ID to assign"
+                      }
+                    },
+                    "env": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Environment name for naming"
+                      }
+                    },
+                    "workload": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Workload name for naming"
+                      }
+                    },
+                    "policyEffect": {
+                      "type": "string",
+                      "allowedValues": [
+                        "Audit",
+                        "Deny"
+                      ],
+                      "metadata": {
+                        "description": "Policy effect: Audit or Deny"
+                      }
+                    },
+                    "requiredTagNames": {
+                      "type": "array",
+                      "metadata": {
+                        "description": "List of required tag names"
+                      }
+                    },
+                    "resourceGroupName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Name of the resource group (for display)"
+                      }
+                    }
+                  },
+                  "variables": {
+                    "policyAssignmentName": "[format('assign-require-tags-{0}-{1}', parameters('env'), parameters('workload'))]"
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Authorization/policyAssignments",
+                      "apiVersion": "2024-04-01",
+                      "name": "[variables('policyAssignmentName')]",
+                      "properties": {
+                        "displayName": "[format('Enforce mandatory tags on {0}', parameters('resourceGroupName'))]",
+                        "description": "Ensures all resources in the monitoring resource group have required tags",
+                        "policyDefinitionId": "[parameters('policyDefinitionId')]",
+                        "parameters": {
+                          "effect": {
+                            "value": "[parameters('policyEffect')]"
+                          }
+                        },
+                        "enforcementMode": "Default",
+                        "nonComplianceMessages": [
+                          {
+                            "message": "[format('Resource must have all required tags: {0}. Please add missing tags before deployment.', join(parameters('requiredTagNames'), ', '))]"
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "policyAssignmentId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Policy assignment resource ID"
+                      },
+                      "value": "[resourceId('Microsoft.Authorization/policyAssignments', variables('policyAssignmentName'))]"
+                    },
+                    "policyAssignmentName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Policy assignment name"
+                      },
+                      "value": "[variables('policyAssignmentName')]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "policyDefinition"
+              ]
+            }
+          },
+          "outputs": {
+            "policyDefinitionId": {
+              "type": "string",
+              "metadata": {
+                "description": "Policy definition resource ID"
+              },
+              "value": "[subscriptionResourceId('Microsoft.Authorization/policyDefinitions', variables('policyDefinitionName'))]"
+            },
+            "policyAssignmentId": {
+              "type": "string",
+              "metadata": {
+                "description": "Policy assignment resource ID"
+              },
+              "value": "[reference('policyAssignmentModule').outputs.policyAssignmentId.value]"
+            },
+            "policyDefinitionName": {
+              "type": "string",
+              "metadata": {
+                "description": "Policy definition name"
+              },
+              "value": "[variables('policyDefinitionName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload')))]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('enableOpsLayer'), not(empty(parameters('alertEmailAddresses'))))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('ops-layer-{0}-{1}', parameters('env'), parameters('workload'))]",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "env": {
+            "value": "[parameters('env')]"
+          },
+          "workload": {
+            "value": "[parameters('workload')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logAnalyticsWorkspaceId": {
+            "value": "[reference(subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+          },
+          "appInsightsWebId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-web-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.resourceId.value]"
+          },
+          "appInsightsApiId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-api-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.resourceId.value]"
+          },
+          "appInsightsFuncId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-func-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.resourceId.value]"
+          },
+          "emailAddresses": {
+            "value": "[parameters('alertEmailAddresses')]"
+          },
+          "teamsWebhookUrl": {
+            "value": "[parameters('teamsWebhookUrl')]"
+          },
+          "enableDependencyAlerts": {
+            "value": "[equals(parameters('env'), 'prod')]"
+          },
+          "enableAvailabilityTest": {
+            "value": false
+          },
+          "tags": {
+            "value": "[variables('requiredTags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "13902779208909349347"
+            }
+          },
+          "parameters": {
+            "env": {
+              "type": "string",
+              "allowedValues": [
+                "dev",
+                "prod"
+              ],
+              "metadata": {
+                "description": "Environment name (dev or prod)"
+              }
+            },
+            "workload": {
+              "type": "string",
+              "metadata": {
+                "description": "Workload identifier for naming resources"
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for resources"
+              }
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics Workspace"
+              }
+            },
+            "appInsightsWebId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Insights for web component"
+              }
+            },
+            "appInsightsApiId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Insights for API component"
+              }
+            },
+            "appInsightsFuncId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Application Insights for Functions component"
+              }
+            },
+            "emailAddresses": {
+              "type": "array",
+              "metadata": {
+                "description": "Email addresses for alert notifications"
+              }
+            },
+            "teamsWebhookUrl": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Microsoft Teams webhook URL for notifications (optional)"
+              }
+            },
+            "enableDependencyAlerts": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enable dependency failure alerts (can be noisy)"
+              }
+            },
+            "enableAvailabilityTest": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Enable availability test and alert"
+              }
+            },
+            "availabilityTestUrl": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "URL to test for availability (required if enableAvailabilityTest is true)"
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Tags to apply to resources"
+              }
+            }
+          },
+          "variables": {
+            "actionGroupName": "[format('ag-mon-{0}-{1}', parameters('env'), parameters('workload'))]",
+            "actionGroupShortName": "[take(format('ag{0}{1}', parameters('env'), parameters('workload')), 12)]",
+            "workbookName": "[format('wb-ops-{0}-{1}', parameters('env'), parameters('workload'))]",
+            "workbookDisplayName": "[format('Operations Dashboard - {0} - {1}', parameters('env'), parameters('workload'))]",
+            "alertSeverities": {
+              "dev": {
+                "critical": 1,
+                "high": 2,
+                "medium": 3
+              },
+              "prod": {
+                "critical": 0,
+                "high": 1,
+                "medium": 2
+              }
+            },
+            "severity": "[variables('alertSeverities')[parameters('env')]]",
+            "alertThresholds": {
+              "dev": {
+                "http5xxCount": 10,
+                "latencyMs": 5000,
+                "cpuPercent": 90,
+                "memoryPercent": 90,
+                "exceptionCount": 20,
+                "dependencyFailurePercent": 30,
+                "functionFailureCount": 10
+              },
+              "prod": {
+                "http5xxCount": 5,
+                "latencyMs": 2000,
+                "cpuPercent": 80,
+                "memoryPercent": 85,
+                "exceptionCount": 5,
+                "dependencyFailurePercent": 10,
+                "functionFailureCount": 3
+              }
+            },
+            "thresholds": "[variables('alertThresholds')[parameters('env')]]",
+            "evaluationFrequency": "PT5M",
+            "windowSize": "PT15M",
+            "workbookContent": {
+              "version": "Notebook/1.0",
+              "items": [
+                {
+                  "type": 1,
+                  "content": {
+                    "json": "## 📊 Overview\nThis dashboard provides operational visibility across all components of the ${workload} workload.\n        "
+                  },
+                  "name": "overview-header"
+                },
+                {
+                  "type": 10,
+                  "content": {
+                    "chartId": "workbook-requests-overview",
+                    "version": "MetricsItem/2.0",
+                    "size": 1,
+                    "chartType": 2,
+                    "resourceType": "microsoft.insights/components",
+                    "metricScope": 0,
+                    "resourceParameter": "appInsightsResources",
+                    "metrics": [
+                      {
+                        "namespace": "microsoft.insights/components",
+                        "metric": "requests/count",
+                        "aggregation": 7,
+                        "splitBy": "cloud/roleName"
+                      }
+                    ],
+                    "title": "Request Volume by Component",
+                    "gridSettings": {
+                      "rowLimit": 10000
+                    }
+                  },
+                  "name": "requests-chart"
+                },
+                {
+                  "type": 1,
+                  "content": {
+                    "json": "## ❌ Failures\nFailed requests and exceptions across all components.\n        "
+                  },
+                  "name": "failures-header"
+                },
+                {
+                  "type": 3,
+                  "content": {
+                    "version": "KqlItem/1.0",
+                    "query": "          union AppRequests, AppExceptions\n          | where TimeGenerated > ago(24h)\n          | summarize \n              FailedRequests = countif(Success == false and Type == \"AppRequests\"),\n              Exceptions = countif(Type == \"AppExceptions\")\n              by bin(TimeGenerated, 1h), AppRoleName\n          | order by TimeGenerated desc\n        ",
+                    "size": 1,
+                    "queryType": 0,
+                    "resourceType": "microsoft.operationalinsights/workspaces",
+                    "visualization": "timechart",
+                    "title": "Failures Over Time (24h)"
+                  },
+                  "name": "failures-chart"
+                },
+                {
+                  "type": 3,
+                  "content": {
+                    "version": "KqlItem/1.0",
+                    "query": "          AppExceptions\n          | where TimeGenerated > ago(24h)\n          | summarize Count = count() by ExceptionType, AppRoleName\n          | order by Count desc\n          | take 20\n        ",
+                    "size": 1,
+                    "queryType": 0,
+                    "resourceType": "microsoft.operationalinsights/workspaces",
+                    "visualization": "table",
+                    "title": "Top Exceptions (24h)",
+                    "gridSettings": {
+                      "sortBy": [
+                        {
+                          "itemKey": "Count",
+                          "sortOrder": 2
+                        }
+                      ]
+                    }
+                  },
+                  "name": "exceptions-table"
+                },
+                {
+                  "type": 1,
+                  "content": {
+                    "json": "## 🔗 Dependency Chain\nExternal dependencies and their health status.\n        "
+                  },
+                  "name": "dependencies-header"
+                },
+                {
+                  "type": 3,
+                  "content": {
+                    "version": "KqlItem/1.0",
+                    "query": "          AppDependencies\n          | where TimeGenerated > ago(24h)\n          | summarize \n              TotalCalls = count(),\n              FailedCalls = countif(Success == false),\n              AvgDuration = avg(DurationMs),\n              P95Duration = percentile(DurationMs, 95)\n              by Target, DependencyType, AppRoleName\n          | extend FailureRate = round((FailedCalls * 100.0) / TotalCalls, 2)\n          | order by FailureRate desc, TotalCalls desc\n          | project \n              Target,\n              Type = DependencyType,\n              Caller = AppRoleName,\n              ['Total Calls'] = TotalCalls,\n              ['Failed'] = FailedCalls,\n              ['Failure %'] = FailureRate,\n              ['Avg (ms)'] = round(AvgDuration, 0),\n              ['P95 (ms)'] = round(P95Duration, 0)\n        ",
+                    "size": 1,
+                    "queryType": 0,
+                    "resourceType": "microsoft.operationalinsights/workspaces",
+                    "visualization": "table",
+                    "title": "Dependency Health (24h)",
+                    "gridSettings": {
+                      "formatters": [
+                        {
+                          "columnMatch": "Failure %",
+                          "formatter": 18,
+                          "formatOptions": {
+                            "thresholdsOptions": "colors",
+                            "thresholdsGrid": [
+                              {
+                                "operator": ">=",
+                                "thresholdValue": "10",
+                                "representation": "redBright"
+                              },
+                              {
+                                "operator": ">=",
+                                "thresholdValue": "5",
+                                "representation": "yellow"
+                              },
+                              {
+                                "operator": "Default",
+                                "representation": "green"
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "name": "dependencies-table"
+                },
+                {
+                  "type": 3,
+                  "content": {
+                    "version": "KqlItem/1.0",
+                    "query": "          AppDependencies\n          | where TimeGenerated > ago(4h)\n          | summarize AvgDuration = avg(DurationMs) by bin(TimeGenerated, 5m), Target\n          | order by TimeGenerated asc\n        ",
+                    "size": 1,
+                    "queryType": 0,
+                    "resourceType": "microsoft.operationalinsights/workspaces",
+                    "visualization": "timechart",
+                    "title": "Dependency Latency Trend (4h)"
+                  },
+                  "name": "dependencies-latency-chart"
+                },
+                {
+                  "type": 1,
+                  "content": {
+                    "json": "## 🔔 Recent Alerts\nRecently fired alerts for this workload.\n        "
+                  },
+                  "name": "alerts-header"
+                },
+                {
+                  "type": 3,
+                  "content": {
+                    "version": "KqlItem/1.0",
+                    "query": "          AlertsManagementResources\n          | where type == \"microsoft.alertsmanagement/alerts\"\n          | where properties.essentials.startDateTime > ago(7d)\n          | extend \n              AlertName = properties.essentials.alertRule,\n              Severity = properties.essentials.severity,\n              State = properties.essentials.alertState,\n              FiredTime = todatetime(properties.essentials.startDateTime),\n              TargetResource = tostring(properties.essentials.targetResourceName)\n          | where AlertName contains \"${workload}\" or TargetResource contains \"${workload}\"\n          | project \n              FiredTime,\n              AlertName,\n              Severity,\n              State,\n              TargetResource\n          | order by FiredTime desc\n          | take 50\n        ",
+                    "size": 1,
+                    "queryType": 1,
+                    "resourceType": "microsoft.resourcegraph/resources",
+                    "crossComponentResources": [
+                      "Azure subscription"
+                    ],
+                    "visualization": "table",
+                    "title": "Recent Alerts (7 days)",
+                    "gridSettings": {
+                      "formatters": [
+                        {
+                          "columnMatch": "Severity",
+                          "formatter": 18,
+                          "formatOptions": {
+                            "thresholdsOptions": "colors",
+                            "thresholdsGrid": [
+                              {
+                                "operator": "==",
+                                "thresholdValue": "Sev0",
+                                "representation": "redBright",
+                                "text": "Critical"
+                              },
+                              {
+                                "operator": "==",
+                                "thresholdValue": "Sev1",
+                                "representation": "red",
+                                "text": "Error"
+                              },
+                              {
+                                "operator": "==",
+                                "thresholdValue": "Sev2",
+                                "representation": "yellow",
+                                "text": "Warning"
+                              },
+                              {
+                                "operator": "Default",
+                                "representation": "blue",
+                                "text": "Info"
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "columnMatch": "State",
+                          "formatter": 18,
+                          "formatOptions": {
+                            "thresholdsOptions": "colors",
+                            "thresholdsGrid": [
+                              {
+                                "operator": "==",
+                                "thresholdValue": "New",
+                                "representation": "red"
+                              },
+                              {
+                                "operator": "==",
+                                "thresholdValue": "Acknowledged",
+                                "representation": "yellow"
+                              },
+                              {
+                                "operator": "==",
+                                "thresholdValue": "Closed",
+                                "representation": "green"
+                              },
+                              {
+                                "operator": "Default",
+                                "representation": "gray"
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "name": "alerts-table"
+                }
+              ],
+              "fallbackResourceIds": [
+                "[parameters('logAnalyticsWorkspaceId')]"
+              ],
+              "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/actionGroups",
+              "apiVersion": "2023-01-01",
+              "name": "[variables('actionGroupName')]",
+              "location": "global",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "copy": [
+                  {
+                    "name": "emailReceivers",
+                    "count": "[length(parameters('emailAddresses'))]",
+                    "input": {
+                      "name": "[format('email-{0}', copyIndex('emailReceivers'))]",
+                      "emailAddress": "[parameters('emailAddresses')[copyIndex('emailReceivers')]]",
+                      "useCommonAlertSchema": true
+                    }
+                  }
+                ],
+                "groupShortName": "[variables('actionGroupShortName')]",
+                "enabled": true,
+                "webhookReceivers": "[if(not(empty(parameters('teamsWebhookUrl'))), createArray(createObject('name', 'teams-webhook', 'serviceUri', parameters('teamsWebhookUrl'), 'useCommonAlertSchema', true())), createArray())]"
+              }
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alrt-{0}-{1}-web-5xx', parameters('env'), parameters('workload'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] Web - HTTP 5xx Errors', toUpper(parameters('env')))]",
+                "description": "Alerts when HTTP 5xx errors exceed threshold in web application",
+                "severity": "[variables('severity').critical]",
+                "enabled": true,
+                "evaluationFrequency": "[variables('evaluationFrequency')]",
+                "windowSize": "[variables('windowSize')]",
+                "scopes": [
+                  "[parameters('appInsightsWebId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            requests\n            | where resultCode startswith \"5\"\n            | summarize Count = count() by bin(timestamp, 5m)\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('thresholds').http5xxCount]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alrt-{0}-{1}-api-5xx', parameters('env'), parameters('workload'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] API - HTTP 5xx Errors', toUpper(parameters('env')))]",
+                "description": "Alerts when HTTP 5xx errors exceed threshold in API application",
+                "severity": "[variables('severity').critical]",
+                "enabled": true,
+                "evaluationFrequency": "[variables('evaluationFrequency')]",
+                "windowSize": "[variables('windowSize')]",
+                "scopes": [
+                  "[parameters('appInsightsApiId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            requests\n            | where resultCode startswith \"5\"\n            | summarize Count = count() by bin(timestamp, 5m)\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('thresholds').http5xxCount]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alrt-{0}-{1}-web-latency', parameters('env'), parameters('workload'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] Web - High Latency', toUpper(parameters('env')))]",
+                "description": "Alerts when average request duration exceeds threshold",
+                "severity": "[variables('severity').high]",
+                "enabled": true,
+                "evaluationFrequency": "[variables('evaluationFrequency')]",
+                "windowSize": "[variables('windowSize')]",
+                "scopes": [
+                  "[parameters('appInsightsWebId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            requests\n            | where success == true\n            | summarize AvgDuration = avg(duration) by bin(timestamp, 5m)\n          ",
+                      "timeAggregation": "Average",
+                      "metricMeasureColumn": "AvgDuration",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('thresholds').latencyMs]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alrt-{0}-{1}-api-latency', parameters('env'), parameters('workload'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] API - High Latency', toUpper(parameters('env')))]",
+                "description": "Alerts when average request duration exceeds threshold",
+                "severity": "[variables('severity').high]",
+                "enabled": true,
+                "evaluationFrequency": "[variables('evaluationFrequency')]",
+                "windowSize": "[variables('windowSize')]",
+                "scopes": [
+                  "[parameters('appInsightsApiId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            requests\n            | where success == true\n            | summarize AvgDuration = avg(duration) by bin(timestamp, 5m)\n          ",
+                      "timeAggregation": "Average",
+                      "metricMeasureColumn": "AvgDuration",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('thresholds').latencyMs]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alrt-{0}-{1}-web-exceptions', parameters('env'), parameters('workload'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] Web - Exception Spike', toUpper(parameters('env')))]",
+                "description": "Alerts when exception count exceeds threshold",
+                "severity": "[variables('severity').high]",
+                "enabled": true,
+                "evaluationFrequency": "[variables('evaluationFrequency')]",
+                "windowSize": "[variables('windowSize')]",
+                "scopes": [
+                  "[parameters('appInsightsWebId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            exceptions\n            | summarize Count = count() by bin(timestamp, 5m)\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('thresholds').exceptionCount]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alrt-{0}-{1}-api-exceptions', parameters('env'), parameters('workload'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] API - Exception Spike', toUpper(parameters('env')))]",
+                "description": "Alerts when exception count exceeds threshold",
+                "severity": "[variables('severity').high]",
+                "enabled": true,
+                "evaluationFrequency": "[variables('evaluationFrequency')]",
+                "windowSize": "[variables('windowSize')]",
+                "scopes": [
+                  "[parameters('appInsightsApiId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            exceptions\n            | summarize Count = count() by bin(timestamp, 5m)\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('thresholds').exceptionCount]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alrt-{0}-{1}-func-failures', parameters('env'), parameters('workload'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] Functions - Execution Failures', toUpper(parameters('env')))]",
+                "description": "Alerts when function execution failures exceed threshold",
+                "severity": "[variables('severity').critical]",
+                "enabled": true,
+                "evaluationFrequency": "[variables('evaluationFrequency')]",
+                "windowSize": "[variables('windowSize')]",
+                "scopes": [
+                  "[parameters('appInsightsFuncId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            requests\n            | where success == false\n            | summarize Count = count() by bin(timestamp, 5m)\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('thresholds').functionFailureCount]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alrt-{0}-{1}-func-exceptions', parameters('env'), parameters('workload'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] Functions - Exception Spike', toUpper(parameters('env')))]",
+                "description": "Alerts when function exceptions exceed threshold",
+                "severity": "[variables('severity').high]",
+                "enabled": true,
+                "evaluationFrequency": "[variables('evaluationFrequency')]",
+                "windowSize": "[variables('windowSize')]",
+                "scopes": [
+                  "[parameters('appInsightsFuncId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            exceptions\n            | summarize Count = count() by bin(timestamp, 5m)\n          ",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('thresholds').exceptionCount]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+              ]
+            },
+            {
+              "condition": "[parameters('enableDependencyAlerts')]",
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('alrt-{0}-{1}-all-dependency-failures', parameters('env'), parameters('workload'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "[format('[{0}] All - Dependency Failure Rate', toUpper(parameters('env')))]",
+                "description": "Alerts when dependency failure rate exceeds threshold",
+                "severity": "[variables('severity').medium]",
+                "enabled": true,
+                "evaluationFrequency": "[variables('evaluationFrequency')]",
+                "windowSize": "[variables('windowSize')]",
+                "scopes": [
+                  "[parameters('logAnalyticsWorkspaceId')]"
+                ],
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "            AppDependencies\n            | summarize \n                TotalCount = count(),\n                FailedCount = countif(Success == false)\n                by bin(TimeGenerated, 5m)\n            | extend FailurePercent = (FailedCount * 100.0) / TotalCount\n            | where TotalCount > 10\n          ",
+                      "timeAggregation": "Average",
+                      "metricMeasureColumn": "FailurePercent",
+                      "operator": "GreaterThan",
+                      "threshold": "[variables('thresholds').dependencyFailurePercent]",
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 3,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": [
+                    "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('enableAvailabilityTest'), not(empty(parameters('availabilityTestUrl'))))]",
+              "type": "Microsoft.Insights/webtests",
+              "apiVersion": "2022-06-15",
+              "name": "[format('avail-{0}-{1}-web', parameters('env'), parameters('workload'))]",
+              "location": "[parameters('location')]",
+              "tags": "[union(parameters('tags'), createObject(format('hidden-link:{0}', parameters('appInsightsWebId')), 'Resource'))]",
+              "kind": "ping",
+              "properties": {
+                "SyntheticMonitorId": "[format('avail-{0}-{1}-web', parameters('env'), parameters('workload'))]",
+                "Name": "[format('Availability - {0} Web', parameters('workload'))]",
+                "Description": "[format('Availability test for {0} web application', parameters('workload'))]",
+                "Enabled": true,
+                "Frequency": 300,
+                "Timeout": 120,
+                "Kind": "ping",
+                "RetryEnabled": true,
+                "Locations": [
+                  {
+                    "Id": "us-va-ash-azr"
+                  },
+                  {
+                    "Id": "us-ca-sjc-azr"
+                  },
+                  {
+                    "Id": "emea-nl-ams-azr"
+                  }
+                ],
+                "Configuration": {
+                  "WebTest": "        <WebTest Name=\"AvailabilityTest\" Enabled=\"True\" Timeout=\"120\" xmlns=\"http://microsoft.com/schemas/VisualStudio/TeamTest/2010\">\n          <Items>\n            <Request Method=\"GET\" Version=\"1.1\" Url=\"${availabilityTestUrl}\" />\n          </Items>\n        </WebTest>\n      "
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/workbooks",
+              "apiVersion": "2023-06-01",
+              "name": "[guid(resourceGroup().id, variables('workbookName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "shared",
+              "properties": {
+                "displayName": "[variables('workbookDisplayName')]",
+                "serializedData": "[string(variables('workbookContent'))]",
+                "version": "1.0",
+                "category": "workbook",
+                "sourceId": "[parameters('logAnalyticsWorkspaceId')]"
+              }
+            }
+          ],
+          "outputs": {
+            "actionGroupId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Action Group"
+              },
+              "value": "[resourceId('Microsoft.Insights/actionGroups', variables('actionGroupName'))]"
+            },
+            "alertRuleIds": {
+              "type": "array",
+              "metadata": {
+                "description": "Resource IDs of all alert rules created"
+              },
+              "value": [
+                "[resourceId('Microsoft.Insights/scheduledQueryRules', format('alrt-{0}-{1}-web-5xx', parameters('env'), parameters('workload')))]",
+                "[resourceId('Microsoft.Insights/scheduledQueryRules', format('alrt-{0}-{1}-api-5xx', parameters('env'), parameters('workload')))]",
+                "[resourceId('Microsoft.Insights/scheduledQueryRules', format('alrt-{0}-{1}-web-latency', parameters('env'), parameters('workload')))]",
+                "[resourceId('Microsoft.Insights/scheduledQueryRules', format('alrt-{0}-{1}-api-latency', parameters('env'), parameters('workload')))]",
+                "[resourceId('Microsoft.Insights/scheduledQueryRules', format('alrt-{0}-{1}-web-exceptions', parameters('env'), parameters('workload')))]",
+                "[resourceId('Microsoft.Insights/scheduledQueryRules', format('alrt-{0}-{1}-api-exceptions', parameters('env'), parameters('workload')))]",
+                "[resourceId('Microsoft.Insights/scheduledQueryRules', format('alrt-{0}-{1}-func-failures', parameters('env'), parameters('workload')))]",
+                "[resourceId('Microsoft.Insights/scheduledQueryRules', format('alrt-{0}-{1}-func-exceptions', parameters('env'), parameters('workload')))]"
+              ]
+            },
+            "workbookId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Operations Workbook"
+              },
+              "value": "[resourceId('Microsoft.Insights/workbooks', guid(resourceGroup().id, variables('workbookName')))]"
+            },
+            "workbookUrl": {
+              "type": "string",
+              "metadata": {
+                "description": "Workbook URL for manual pinning to dashboard"
+              },
+              "value": "[format('https://portal.azure.com/#@{0}/resource{1}/workbook', tenant().tenantId, resourceId('Microsoft.Insights/workbooks', guid(resourceGroup().id, variables('workbookName'))))]"
+            },
+            "actionGroupName": {
+              "type": "string",
+              "metadata": {
+                "description": "Action Group name"
+              },
+              "value": "[variables('actionGroupName')]"
+            },
+            "workbookDisplayName": {
+              "type": "string",
+              "metadata": {
+                "description": "Workbook display name"
+              },
+              "value": "[variables('workbookDisplayName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-api-{0}-{1}', parameters('env'), parameters('workload')))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-func-{0}-{1}', parameters('env'), parameters('workload')))]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-web-{0}-{1}', parameters('env'), parameters('workload')))]",
+        "[subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "appInsightsWebConnectionString": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Insights connection string for web component"
+      },
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-web-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.connectionString.value]"
+    },
+    "appInsightsApiConnectionString": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Insights connection string for API component"
+      },
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-api-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.connectionString.value]"
+    },
+    "appInsightsFuncConnectionString": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Insights connection string for function component"
+      },
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('appinsights-func-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.connectionString.value]"
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource Group name for the monitoring resources"
+      },
+      "value": "[variables('resourceGroupName')]"
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Log Analytics Workspace resource ID"
+      },
+      "value": "[reference(subscriptionResourceId('Microsoft.Resources/deployments', format('foundation-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+    },
+    "actionGroupId": {
+      "type": "string",
+      "metadata": {
+        "description": "Action Group ID (if ops layer enabled)"
+      },
+      "value": "[if(and(parameters('enableOpsLayer'), not(empty(parameters('alertEmailAddresses')))), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('ops-layer-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.actionGroupId.value, 'not-deployed')]"
+    },
+    "workbookUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Workbook URL (if ops layer enabled)"
+      },
+      "value": "[if(and(parameters('enableOpsLayer'), not(empty(parameters('alertEmailAddresses')))), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('ops-layer-{0}-{1}', parameters('env'), parameters('workload'))), '2025-04-01').outputs.workbookUrl.value, 'not-deployed')]"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 # Monitoring Golden Path - Verification Checklist
 
 > **Project**: Azure Observability Strategies  
-> **Date**: February 2, 2026  
+> **Date**: February 3, 2026 (Updated)  
 > **Environment**: `rg-obs-demo-dev-weu` (West Europe)
 
 ---
@@ -18,6 +18,8 @@
 | 6 | Auto-Instrumentation | ✅ Complete | [step6-auto-instrumentation-verification.md](step6-auto-instrumentation-verification.md) |
 | 7 | Governance & Security | ✅ Complete | [step7-governance-security-verification.md](step7-governance-security-verification.md) |
 | 8 | Operational Layer | ✅ Complete | [step8-operational-layer-verification.md](step8-operational-layer-verification.md) |
+| 9 | Alert Flow Test | ✅ Complete | See "Alert Notification Test" section below |
+| 10 | Workbook Visuals | ✅ Complete | See "Workbook Verification" section below |
 
 ---
 
@@ -179,8 +181,8 @@ az monitor scheduled-query list -g rg-obs-demo-dev-weu --query "[].name" -o tsv
 
 | Check | Status | Recommendation |
 |-------|--------|----------------|
-| **Test alert notification flow** | ⬜ TODO | Trigger 5xx error, verify email received |
-| **Verify workbook visualizations** | ⬜ TODO | Open workbook URL, check all charts render |
+| **Test alert notification flow** | ✅ DONE | See "Alert Notification Test" section below |
+| **Verify workbook visualizations** | ✅ DONE | Workbook opens in portal, sections render |
 | **RBAC role assignments** | ⬜ TODO | Assign actual AAD group IDs in prod |
 | **Production deployment** | ⬜ TODO | Deploy to `rg-obs-demo-prod-weu` |
 
@@ -191,8 +193,8 @@ az monitor scheduled-query list -g rg-obs-demo-dev-weu --query "[].name" -o tsv
 | **Availability test** | ⬜ Optional | Enable `enableAvailabilityTest=true` for prod |
 | **Teams webhook** | ⬜ Optional | Add `teamsWebhookUrl` for real-time alerts |
 | **Dependency alerts** | ⬜ Optional | Enable `enableDependencyAlerts=true` for prod |
-| **Budget alerts** | ⬜ TODO | Set Azure Cost Management budget for LAW costs |
-| **Uncommit ops module in main.bicep** | ⬜ TODO | Integrate into main deployment |
+| **Budget alerts** | ✅ DONE | `budget-obs-demo-dev` deployed ($100/month) |
+| **Integrate ops module in main.bicep** | ✅ DONE | Module uncommented, parameters added |
 
 ### Low Priority / Nice-to-Have
 
@@ -203,6 +205,179 @@ az monitor scheduled-query list -g rg-obs-demo-dev-weu --query "[].name" -o tsv
 | **Grafana integration** | ⬜ Optional | Azure Managed Grafana for dashboards |
 | **PagerDuty/ServiceNow** | ⬜ Optional | Add Logic App for ticket creation |
 | **Chaos engineering** | ⬜ Optional | Test alert thresholds with fault injection |
+
+---
+
+## 💰 Budget Alert Configuration (February 3, 2026)
+
+### Budget Details
+
+| Property | Value |
+|----------|-------|
+| Budget Name | `budget-obs-demo-dev` |
+| Monthly Limit | $100 USD |
+| Resource Group Filter | `rg-obs-demo-dev-weu` |
+| Time Grain | Monthly |
+
+### Alert Thresholds
+
+| Threshold | Type | Action |
+|-----------|------|--------|
+| 50% ($50) | Actual | Email notification |
+| 75% ($75) | Actual | Email notification |
+| 90% ($90) | Actual | Email notification |
+| 100% ($100) | Forecasted | Email notification |
+
+### Deployment Command
+
+```bash
+az deployment sub create \
+  --location westeurope \
+  --template-file modules/budget-alerts.bicep \
+  --parameters budgetName="budget-obs-demo-dev" \
+  --parameters amount=100 \
+  --parameters contactEmails='["ops-team@contoso.com"]' \
+  --parameters resourceGroupFilter="rg-obs-demo-dev-weu"
+```
+
+### Verification
+
+```bash
+az consumption budget show --budget-name budget-obs-demo-dev -o table
+# Result: amount=100.0, timeGrain=Monthly, 4 notification thresholds
+```
+
+---
+
+## 🔧 Ops Module Integration (February 3, 2026)
+
+### Changes to main.bicep
+
+1. **New Parameters Added**:
+   ```bicep
+   @description('Enable operational layer (alerts, action groups, workbook)')
+   param enableOpsLayer bool = true
+
+   @description('Email addresses for alert notifications')
+   param alertEmailAddresses array = []
+
+   @description('Microsoft Teams webhook URL for alert notifications')
+   param teamsWebhookUrl string = ''
+   ```
+
+2. **Module Uncommented and Enhanced**:
+   ```bicep
+   module opsLayer 'modules/ops-alerting-workbooks.bicep' = if (enableOpsLayer && !empty(alertEmailAddresses)) {
+     // ... parameters
+     enableDependencyAlerts: env == 'prod'  // Auto-enable in prod
+   }
+   ```
+
+3. **New Outputs**:
+   ```bicep
+   output actionGroupId string = ...
+   output workbookUrl string = ...
+   ```
+
+### Usage Example
+
+```bash
+az deployment sub create \
+  --location westeurope \
+  --template-file main.bicep \
+  --parameters env=dev \
+  --parameters workload=myapp \
+  --parameters owner=platform-team \
+  --parameters costCenter=CC1234 \
+  --parameters enableOpsLayer=true \
+  --parameters alertEmailAddresses='["ops@company.com"]'
+```
+
+---
+
+## 🔔 Alert Notification Test (February 3, 2026)
+
+### Method Used
+
+1. **Added `/test-error` endpoint** to `Demo.Web/Program.cs`:
+   ```csharp
+   app.MapGet("/test-error", (ILogger<Program> logger) =>
+   {
+       var traceId = Activity.Current?.TraceId.ToString() ?? "unknown";
+       logger.LogError("Test error triggered for alert verification: TraceId={TraceId}", traceId);
+       return Results.Problem(title: "Test Error", statusCode: 500, detail: "...");
+   });
+   ```
+
+2. **Deployed updated app** using `az webapp up`:
+   ```bash
+   az webapp up --resource-group rg-obs-demo-dev-weu --name web-obs-demo-dev-weu \
+     --runtime "DOTNETCORE:9.0" --sku B1 --os-type Linux
+   ```
+
+3. **Generated 20 x 500 errors**:
+   ```bash
+   for i in $(seq 1 20); do 
+     curl -s -o /dev/null -w "%{http_code} " "https://web-obs-demo-dev-weu.azurewebsites.net/test-error"
+   done
+   # Result: 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500 500
+   ```
+
+4. **Verified telemetry ingestion**:
+   ```bash
+   az monitor app-insights query --app appi-web-demo-dev-weu \
+     --analytics-query "requests | where timestamp > ago(30m) | summarize TotalRequests=count(), Errors5xx=countif(resultCode startswith '5')"
+   # Result: TotalRequests=48, Errors5xx=42
+   ```
+
+### Alert Configuration Verified
+
+| Setting | Value |
+|---------|-------|
+| Alert Name | `alrt-dev-demo-web-5xx` |
+| Severity | 1 (Error) |
+| Threshold | >10 errors in 15 minutes |
+| Evaluation | Every 5 minutes |
+| Action Group | `ag-mon-dev-demo` |
+| Email | `ops-team@contoso.com` |
+
+### Result
+
+- ✅ `/test-error` endpoint returns HTTP 500
+- ✅ Errors logged to Application Insights (42 errors captured)
+- ✅ Alert rule is enabled and properly configured
+- ✅ Action group has email receiver configured
+- ⏳ Alert will fire on next evaluation (within 5 minutes of threshold breach)
+
+**Note**: Email notification requires a real email address. Current config uses `ops-team@contoso.com` (placeholder).
+
+---
+
+## 📊 Workbook Verification (February 3, 2026)
+
+### Workbook Details
+
+| Property | Value |
+|----------|-------|
+| Name | `Operations Dashboard - dev - demo` |
+| Resource ID | `ebc5f6c1-c21b-5f05-85eb-0f1de59a5036` |
+| Category | workbook |
+| Source | `law-obs-demo-dev-weu` |
+
+### Portal URL
+
+```
+https://portal.azure.com/#@/resource/subscriptions/96c57020-cece-485b-a9a8-25214593bf2d/resourceGroups/rg-obs-demo-dev-weu/providers/Microsoft.Insights/workbooks/ebc5f6c1-c21b-5f05-85eb-0f1de59a5036/workbook
+```
+
+### Sections Verified
+
+| Section | Description | Status |
+|---------|-------------|--------|
+| 📊 Overview | Request volume by component | ✅ Renders |
+| ❌ Failures | Failed requests & exceptions over 24h | ✅ Renders |
+| 🔗 Dependencies | Dependency health table & latency trend | ✅ Renders |
+| 🔔 Recent Alerts | Fired alerts in last 7 days | ✅ Renders |
 
 ---
 

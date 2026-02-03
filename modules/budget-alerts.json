@@ -1,0 +1,158 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.38.33.27573",
+      "templateHash": "14161635625569251224"
+    }
+  },
+  "parameters": {
+    "budgetName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name for the budget"
+      }
+    },
+    "amount": {
+      "type": "int",
+      "minValue": 1,
+      "metadata": {
+        "description": "Monthly budget amount in USD"
+      }
+    },
+    "contactEmails": {
+      "type": "array",
+      "metadata": {
+        "description": "Email addresses for budget notifications"
+      }
+    },
+    "resourceGroupFilter": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource group to filter costs (optional)"
+      }
+    },
+    "startDate": {
+      "type": "string",
+      "defaultValue": "[format('{0}-{1}-01', utcNow('yyyy'), utcNow('MM'))]",
+      "metadata": {
+        "description": "Start date for the budget (defaults to first of current month)"
+      }
+    },
+    "env": {
+      "type": "string",
+      "defaultValue": "dev",
+      "metadata": {
+        "description": "Environment tag for categorization"
+      }
+    }
+  },
+  "variables": {
+    "thresholds": [
+      {
+        "percentage": 50,
+        "type": "Actual"
+      },
+      {
+        "percentage": 75,
+        "type": "Actual"
+      },
+      {
+        "percentage": 90,
+        "type": "Actual"
+      },
+      {
+        "percentage": 100,
+        "type": "Forecasted"
+      }
+    ]
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Consumption/budgets",
+      "apiVersion": "2023-11-01",
+      "name": "[parameters('budgetName')]",
+      "properties": {
+        "category": "Cost",
+        "amount": "[parameters('amount')]",
+        "timeGrain": "Monthly",
+        "timePeriod": {
+          "startDate": "[parameters('startDate')]"
+        },
+        "filter": "[if(not(empty(parameters('resourceGroupFilter'))), createObject('dimensions', createObject('name', 'ResourceGroupName', 'operator', 'In', 'values', createArray(parameters('resourceGroupFilter')))), createObject())]",
+        "notifications": {
+          "threshold50Actual": {
+            "enabled": true,
+            "operator": "GreaterThan",
+            "threshold": 50,
+            "thresholdType": "Actual",
+            "contactEmails": "[parameters('contactEmails')]",
+            "locale": "en-us"
+          },
+          "threshold75Actual": {
+            "enabled": true,
+            "operator": "GreaterThan",
+            "threshold": 75,
+            "thresholdType": "Actual",
+            "contactEmails": "[parameters('contactEmails')]",
+            "locale": "en-us"
+          },
+          "threshold90Actual": {
+            "enabled": true,
+            "operator": "GreaterThan",
+            "threshold": 90,
+            "thresholdType": "Actual",
+            "contactEmails": "[parameters('contactEmails')]",
+            "locale": "en-us"
+          },
+          "threshold100Forecasted": {
+            "enabled": true,
+            "operator": "GreaterThan",
+            "threshold": 100,
+            "thresholdType": "Forecasted",
+            "contactEmails": "[parameters('contactEmails')]",
+            "locale": "en-us"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "budgetId": {
+      "type": "string",
+      "metadata": {
+        "description": "Budget resource ID"
+      },
+      "value": "[subscriptionResourceId('Microsoft.Consumption/budgets', parameters('budgetName'))]"
+    },
+    "budgetName": {
+      "type": "string",
+      "metadata": {
+        "description": "Budget name"
+      },
+      "value": "[parameters('budgetName')]"
+    },
+    "budgetAmount": {
+      "type": "int",
+      "metadata": {
+        "description": "Monthly budget amount"
+      },
+      "value": "[parameters('amount')]"
+    },
+    "alertThresholds": {
+      "type": "array",
+      "metadata": {
+        "description": "Alert thresholds configured"
+      },
+      "value": [
+        "50% actual",
+        "75% actual",
+        "90% actual",
+        "100% forecasted"
+      ]
+    }
+  }
+}

@@ -67,6 +67,17 @@ var app = builder.Build();
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = serviceName }));
 
+// Test endpoint for alert verification - triggers 5xx error
+app.MapGet("/test-error", (ILogger<Program> logger) =>
+{
+    var traceId = Activity.Current?.TraceId.ToString() ?? "unknown";
+    logger.LogError("Test error triggered for alert verification: TraceId={TraceId}", traceId);
+    return Results.Problem(
+        title: "Test Error",
+        statusCode: 500,
+        detail: "This error was intentionally triggered for alert testing.");
+});
+
 // Main demo endpoint - triggers the distributed trace
 app.MapGet("/demo", async (IHttpClientFactory httpClientFactory, ILogger<Program> logger) =>
 {

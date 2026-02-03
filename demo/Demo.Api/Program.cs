@@ -64,6 +64,17 @@ var app = builder.Build();
 // Health check
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = serviceName }));
 
+// Test endpoint for alert verification - triggers 500 error
+app.MapGet("/test-error", (ILogger<Program> logger) =>
+{
+    var traceId = Activity.Current?.TraceId.ToString() ?? "unknown";
+    logger.LogError("Test error triggered for alert verification: TraceId={TraceId}", traceId);
+    return Results.Problem(
+        title: "Test Error",
+        statusCode: 500,
+        detail: "This error was intentionally triggered for alert testing.");
+});
+
 // Orders endpoint - receives calls from Demo.Web, calls Demo.Func
 app.MapGet("/orders/{orderId:guid}", async (
     Guid orderId,
