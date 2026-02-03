@@ -251,7 +251,7 @@ PARALLEL_JOBS=10 ./scripts/multi-subscription-audit.sh
 |---|-------|---------|---------|-------|
 | 2.3.1 | Total subscriptions in scope | `echo $ALL_SUBS | wc -w` | 9 | |
 | 2.3.2 | Total resources across tenant | `az graph query -q "Resources | count" --subscriptions $ALL_SUBS --first 1000` | | |
-| 2.3.3 | Total App Insights instances | `az graph query -q "Resources | where type =~ 'microsoft.insights/components' | count" --subscriptions $ALL_SUBS --first 1000` | 0 | |
+| 2.3.3 | Total App Insights instances | `az graph query -q "Resources | where type =~ 'microsoft.insights/components' | count" --subscriptions $ALL_SUBS --first 1000` | 27 | |
 | 2.3.4 | Total Log Analytics Workspaces | `az graph query -q "Resources | where type =~ 'microsoft.operationalinsights/workspaces' | count" --subscriptions $ALL_SUBS --first 1000` | 26 | |
 | 2.3.5 | Total alert rules (all types) | See 2.1.5 | 216 | |
 | 2.3.6 | Subscriptions without any monitoring | Cross-reference results | | |
@@ -295,10 +295,10 @@ Resources
 |--------------|-------|
 | Metric Alert | 211 |
 | App Service | 72 |
+| Application Insights | 27 |
 | Log Analytics Workspace | 26 |
 | Action Group | 10 |
 | Scheduled Query Alert | 5 |
-| Application Insights | 0 |
 
 ### 3.2 Inventory Checklist
 
@@ -534,8 +534,6 @@ Resources
 | order by subscriptionId, name
 " --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 ```
-
-> ⚠️ **Current Audit Finding**: 0 Application Insights instances in target subscriptions!
 
 ### 7.2 App Insights Audit Checklist
 
