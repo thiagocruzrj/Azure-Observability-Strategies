@@ -2,9 +2,9 @@
 
 > **Purpose**: Comprehensive audit checklist for assessing Azure App Services monitoring implementations  
 > **Access Required**: Reader role on target subscriptions  
-> **Version**: 2.0  
+> **Version**: 2.1  
 > **Date**: February 3, 2026  
-> **Scripts**: See [`scripts/multi-subscription-audit.sh`](../scripts/multi-subscription-audit.sh) (Bash) or [`scripts/multi-subscription-audit.ps1`](../scripts/multi-subscription-audit.ps1) (PowerShell)  
+> **Script**: See [`scripts/multi-subscription-audit.sh`](../scripts/multi-subscription-audit.sh) (Bash)  
 > **Quick Commands**: See [`docs/multi-subscription-quick-commands.md`](multi-subscription-quick-commands.md)
 
 ---
@@ -91,62 +91,151 @@ Azure Resource Graph provides **instant cross-subscription queries** without swi
 > 4. Add `--query "data"` to extract actual results (otherwise you get metadata!)
 
 ```bash
-# First, store all subscription IDs for reuse
-# Note: tr -d '\r' removes Windows carriage returns if running in Git Bash/WSL
-ALL_SUBS=$(az account list --query "[?state=='Enabled'].id" -o tsv | tr -d '\r' | tr '\n' ' ')
+# ============================================================
+# SETUP: Run this first to enable cross-subscription queries
+# ============================================================
+# Option 1: All enabled subscriptions
+# ALL_SUBS=$(az account list --query "[?state=='Enabled'].id" -o tsv | tr -d '\r' | tr '\n' ' ')
 
-# Verify subscriptions loaded
+# Option 2: Specific target subscriptions (RECOMMENDED for this audit)
+ALL_SUBS="76cd0ab7-9ab0-412a-b927-cc10e3d656d3 039c62ed-7e0c-4d56-bb3f-be23033758ce 98d67ae7-6840-4bbb-a9db-23f12702daec 8300de04-726b-4119-8637-1920254b613b 4f9b5670-6e01-452b-9068-534c3e8b80fd 04669dbd-24c3-4cbe-a6a0-dbae82a9cb91 658a3795-22d3-4ac1-a87c-70810b337754 2e3c305c-04a8-48f7-b8f7-e615c5bf8669 1d08dafe-eb6c-4aa7-b738-a851f0959ba7"
+
 echo "Loaded $(echo $ALL_SUBS | wc -w) subscriptions"
+# Target subscriptions:
+# - Edv2 BR QA
+# - EVASM NEU PRO, EVASM NEU QA, EVASM WUS PRO (LATAM)
+# - MAE LATAM PRO, MAE NEU PRO, MAE NEU QA
+# - RecursosInternos-DevOps, RecursosInternos-DevOps QA
+```
 
-# Count all resources by subscription (ALL subscriptions)
-az graph query -q "Resources | summarize Total=count() by subscriptionId | order by Total desc" \
+#### 2.1.1 App Services Inventory (Web Apps, Function Apps, API Apps)
+
+```bash
+# Total count by type across ALL subscriptions
+az graph query -q "Resources 
+| where type =~ 'microsoft.web/sites'
+| extend appType = case(
+    kind contains 'functionapp', 'Function App',
+    kind contains 'api', 'API App',
+    'Web App')
+| summarize Total=count() by appType
+| order by Total desc" \
   --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+```
 
-# All Application Insights across tenant
+#### 2.1.2 Application Insights - Total Count
+
+```bash
+# Total Application Insights across tenant
 az graph query -q "Resources 
 | where type =~ 'microsoft.insights/components' 
-| project name, subscriptionId, resourceGroup, location, 
-          ingestionMode=properties.IngestionMode, 
-          workspaceId=properties.WorkspaceResourceId" \
-  --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+| count" \
+  --subscriptions $ALL_SUBS --first 1000
+```
 
-# Find Classic App Insights needing migration (CRITICAL!)
+#### 2.1.3 Log Analytics Workspaces - Total Count
+
+```bash
+# Total Log Analytics Workspaces across tenant
 az graph query -q "Resources 
-| where type =~ 'microsoft.insights/components' 
-| where isnull(properties.WorkspaceResourceId) or properties.WorkspaceResourceId == ''
-| project name, subscriptionId, resourceGroup, location" \
-  --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+| where type =~ 'microsoft.operationalinsights/workspaces' 
+| count" \
+  --subscriptions $ALL_SUBS --first 1000
 
-# All Log Analytics Workspaces with retention
+# Detailed list with retention settings
 az graph query -q "Resources 
 | where type =~ 'microsoft.operationalinsights/workspaces' 
 | project name, subscriptionId, resourceGroup, 
           retention=properties.retentionInDays, 
-          sku=properties.sku.name" \
+          sku=properties.sku.name
+| order by subscriptionId, name" \
+  --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+```
+
+#### 2.1.4 App Services WITHOUT Application Insights
+
+```bash
+# List all Web Apps, Function Apps, and API Apps missing App Insights connection string
+az graph query -q "Resources
+| where type =~ 'microsoft.web/sites'
+| extend appType = case(
+    kind contains 'functionapp', 'Function App',
+    kind contains 'api', 'API App',
+    'Web App')
+| mv-expand setting = properties.siteConfig.appSettings
+| summarize hasAppInsights = countif(setting.name == 'APPLICATIONINSIGHTS_CONNECTION_STRING') by name, appType, subscriptionId, resourceGroup
+| where hasAppInsights == 0
+| project name, appType, subscriptionId, resourceGroup
+| order by appType, name" \
   --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 
-# All alert rules by subscription
+# Count of apps WITHOUT App Insights by type
+az graph query -q "Resources
+| where type =~ 'microsoft.web/sites'
+| extend appType = case(
+    kind contains 'functionapp', 'Function App',
+    kind contains 'api', 'API App',
+    'Web App')
+| mv-expand setting = properties.siteConfig.appSettings
+| summarize hasAppInsights = countif(setting.name == 'APPLICATIONINSIGHTS_CONNECTION_STRING') by name, appType
+| where hasAppInsights == 0
+| summarize MissingAppInsights=count() by appType
+| order by MissingAppInsights desc" \
+  --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+```
+
+#### 2.1.5 Alert Rules for App Services (Web Apps, Function Apps, API Apps)
+
+```bash
+# All metric alerts targeting App Services
+az graph query -q "Resources
+| where type =~ 'microsoft.insights/metricalerts'
+| mv-expand scope = properties.scopes
+| where scope contains 'microsoft.web/sites'
+| project alertName=name, subscriptionId, resourceGroup, 
+          severity=properties.severity, 
+          enabled=properties.enabled,
+          targetResource=split(scope, '/')[8]
+| order by subscriptionId, alertName" \
+  --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# All scheduled query (log) alerts for App Services
+az graph query -q "Resources
+| where type =~ 'microsoft.insights/scheduledqueryrules'
+| mv-expand scope = properties.scopes
+| where scope contains 'microsoft.insights/components' or scope contains 'microsoft.operationalinsights/workspaces'
+| project alertName=name, subscriptionId, resourceGroup,
+          severity=properties.severity,
+          enabled=properties.enabled,
+          description=properties.description
+| order by subscriptionId, alertName" \
+  --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# Summary: Total alert rules by type
 az graph query -q "Resources 
 | where type in~ ('microsoft.insights/metricalerts', 'microsoft.insights/scheduledqueryrules')
-| summarize Total=count() by subscriptionId, type" \
+| extend alertType = case(
+    type =~ 'microsoft.insights/metricalerts', 'Metric Alert',
+    'Scheduled Query Alert')
+| summarize Total=count() by alertType" \
   --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# Alert types by metric
+ echo "=== Alert Rules by Metric Type ===" && az graph query -q "Resources | where type =~ 'microsoft.insights/metricalerts' | extend metricName = tostring(properties.criteria.allOf[0].metricName) | summarize Total=count() by metricName | order by Total desc" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 ```
 
 ### 2.2 Automated Multi-Subscription Audit
 
-For comprehensive audits, use the provided scripts:
+For comprehensive audits, use the provided bash script:
 
-**PowerShell (Windows):**
-```powershell
-# Run full audit across all subscriptions
-.\scripts\multi-subscription-audit.ps1 -OutputDir "client-audit"
+> ⚠️ **Prerequisites:**
+> - Bash script requires `jq` installed: `choco install jq` or download from [jqlang/jq](https://github.com/jqlang/jq/releases)
 
-# With custom throttle limit
-.\scripts\multi-subscription-audit.ps1 -ThrottleLimit 10
-```
-
-**Bash (Linux/macOS/WSL):**
 ```bash
+# Install jq first (Windows Git Bash)
+# Option 1: choco install jq
+# Option 2: curl -L -o /usr/bin/jq.exe https://github.com/jqlang/jq/releases/latest/download/jq-win64.exe
+
 chmod +x scripts/multi-subscription-audit.sh
 ./scripts/multi-subscription-audit.sh
 
@@ -160,13 +249,12 @@ PARALLEL_JOBS=10 ./scripts/multi-subscription-audit.sh
 
 | # | Check | Command | Finding | Score |
 |---|-------|---------|---------|-------|
-| 2.3.1 | Total subscriptions accessible | `az account list --query "length([?state=='Enabled'])"` | | |
+| 2.3.1 | Total subscriptions in scope | `echo $ALL_SUBS | wc -w` | 9 | |
 | 2.3.2 | Total resources across tenant | `az graph query -q "Resources | count" --subscriptions $ALL_SUBS --first 1000` | | |
-| 2.3.3 | Total App Insights instances | `az graph query -q "Resources | where type =~ 'microsoft.insights/components' | count" --subscriptions $ALL_SUBS --first 1000` | | |
-| 2.3.4 | Classic App Insights needing migration | Resource Graph query above | | |
-| 2.3.5 | Total Log Analytics Workspaces | `az graph query -q "Resources | where type =~ 'microsoft.operationalinsights/workspaces' | count" --subscriptions $ALL_SUBS --first 1000` | | |
-| 2.3.6 | Total alert rules (all types) | Resource Graph query above | | |
-| 2.3.7 | Subscriptions without any monitoring | Cross-reference results | | |
+| 2.3.3 | Total App Insights instances | `az graph query -q "Resources | where type =~ 'microsoft.insights/components' | count" --subscriptions $ALL_SUBS --first 1000` | 0 | |
+| 2.3.4 | Total Log Analytics Workspaces | `az graph query -q "Resources | where type =~ 'microsoft.operationalinsights/workspaces' | count" --subscriptions $ALL_SUBS --first 1000` | 26 | |
+| 2.3.5 | Total alert rules (all types) | See 2.1.5 | 216 | |
+| 2.3.6 | Subscriptions without any monitoring | Cross-reference results | | |
 
 ---
 
@@ -174,15 +262,10 @@ PARALLEL_JOBS=10 ./scripts/multi-subscription-audit.sh
 
 ### 3.1 Resource Count Summary
 
-**Option A: Azure Resource Graph (Recommended - Instant Cross-Subscription)**
-
 > ⚠️ **Remember**: Always include `--subscriptions $ALL_SUBS` to query all subscriptions!
 
 ```bash
-# First, ensure $ALL_SUBS is set
-ALL_SUBS=$(az account list --query "[?state=='Enabled'].id" -o tsv)
-
-# All-in-one summary across ALL subscriptions
+# All-in-one summary across ALL subscriptions with resource names
 az graph query -q "
 Resources
 | where type in~ (
@@ -193,36 +276,29 @@ Resources
     'microsoft.insights/metricalerts',
     'microsoft.insights/scheduledqueryrules'
 )
-| summarize Total=count() by type
+| extend ResourceType = case(
+    type =~ 'microsoft.web/sites', 'App Service',
+    type =~ 'microsoft.insights/components', 'Application Insights',
+    type =~ 'microsoft.operationalinsights/workspaces', 'Log Analytics Workspace',
+    type =~ 'microsoft.insights/actiongroups', 'Action Group',
+    type =~ 'microsoft.insights/metricalerts', 'Metric Alert',
+    type =~ 'microsoft.insights/scheduledqueryrules', 'Scheduled Query Alert',
+    type)
+| summarize Total=count() by ResourceType
 | order by Total desc
 " --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 ```
 
-**Option B: Per-Subscription (if Resource Graph unavailable)**
-```bash
-SUBSCRIPTION_ID="<subscription-id>"
-az account set --subscription $SUBSCRIPTION_ID
+**Expected Output:**
 
-# Count key monitoring resources
-echo "=== Subscription: $SUBSCRIPTION_ID ==="
-echo "App Services: $(az webapp list --query "length(@)")"
-echo "Function Apps: $(az functionapp list --query "length(@)")"
-echo "Application Insights: $(az monitor app-insights component list --query "length(@)")"
-echo "Log Analytics Workspaces: $(az monitor log-analytics workspace list --query "length(@)")"
-echo "Action Groups: $(az monitor action-group list --query "length(@)")"
-echo "Alert Rules: $(az monitor metrics alert list --query "length(@)")"
-echo "Scheduled Query Rules: $(az monitor scheduled-query list --query "length(@)" 2>/dev/null || echo 'N/A')"
-```
-
-**Option C: Use Automated Script (Full Export)**
-```bash
-# PowerShell
-.\scripts\multi-subscription-audit.ps1
-# Results in: audit-YYYYMMDD/summary/resource-counts.csv
-
-# Bash
-./scripts/multi-subscription-audit.sh
-```
+| ResourceType | Total |
+|--------------|-------|
+| Metric Alert | 211 |
+| App Service | 72 |
+| Log Analytics Workspace | 26 |
+| Action Group | 10 |
+| Scheduled Query Alert | 5 |
+| Application Insights | 0 |
 
 ### 3.2 Inventory Checklist
 
@@ -261,26 +337,6 @@ az graph query -q "Resources
 | order by subscriptionId, Total desc" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 ```
 
-**Query: App Services without Application Insights:**
-
-```bash
-# Option 1: Resource Graph (cross-subscription) - requires --subscriptions!
-az graph query -q "
-Resources
-| where type =~ 'microsoft.web/sites'
-| project name, subscriptionId, resourceGroup, kind,
-          hasAppInsights=isnotnull(properties.siteConfig.appSettings)
-| where hasAppInsights == false or kind contains 'functionapp'
-" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
-
-# Option 2: Single subscription (more detailed)
-az webapp list --query "[?!contains(keys(siteConfig.appSettings || {}), 'APPLICATIONINSIGHTS_CONNECTION_STRING')].{
-  Name:name,
-  ResourceGroup:resourceGroup,
-  Location:location
-}" -o table
-```
-
 ---
 
 ## 4. Monitoring Strategy Assessment
@@ -298,41 +354,18 @@ az webapp list --query "[?!contains(keys(siteConfig.appSettings || {}), 'APPLICA
 **Assessment Commands:**
 
 ```bash
-# Option 1: Azure Resource Graph (ALL subscriptions at once - RECOMMENDED)
-# Make sure $ALL_SUBS is set: ALL_SUBS=$(az account list --query "[?state=='Enabled'].id" -o tsv)
-
+# App Insights inventory across ALL subscriptions
 az graph query -q "
 Resources
 | where type =~ 'microsoft.insights/components'
 | project name, subscriptionId, resourceGroup, location,
           ingestionMode=properties.IngestionMode,
-          workspaceId=properties.WorkspaceResourceId,
-          isClassic=isnull(properties.WorkspaceResourceId) or properties.WorkspaceResourceId == ''
-| order by isClassic desc
+          workspaceId=properties.WorkspaceResourceId
+| order by subscriptionId, name
 " --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
-
-# Find CLASSIC App Insights across ALL subscriptions (CRITICAL!)
-az graph query -q "
-Resources
-| where type =~ 'microsoft.insights/components'
-| where isnull(properties.WorkspaceResourceId) or properties.WorkspaceResourceId == ''
-| project name, subscriptionId, resourceGroup
-" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
-
-# Option 2: Single subscription
-az monitor app-insights component list \
-  --query "[].{
-    Name:name,
-    ResourceGroup:resourceGroup,
-    IngestionMode:ingestionMode,
-    WorkspaceId:workspaceResourceId,
-    Type:kind
-  }" -o table
-
-# Identify CLASSIC App Insights (single subscription)
-az monitor app-insights component list \
-  --query "[?ingestionMode!='LogAnalytics'].{Name:name, ResourceGroup:resourceGroup}" -o table
 ```
+
+> ✅ **Note**: No Classic App Insights found in audit scope. All instances are workspace-based.
 
 ### 4.2 Strategy Scoring
 
@@ -340,8 +373,7 @@ az monitor app-insights component list \
 |---------|-------|-------------|
 | ✅ Workspace-based, unified LAW | 3 | Best practice |
 | ⚠️ Workspace-based, multiple LAWs | 2 | Acceptable, may complicate queries |
-| ❌ Mixed classic + workspace | 1 | Migration needed |
-| ❌ All classic App Insights | 0 | Critical - migrate immediately |
+| ❌ No App Insights deployed | 0 | Critical - deploy immediately |
 
 ---
 
@@ -363,37 +395,23 @@ az monitor app-insights component list \
 ### 5.2 Naming Compliance Checks
 
 ```bash
-# Export all resource names for analysis
-az resource list --query "[].{
-  Name:name,
-  Type:type,
-  ResourceGroup:resourceGroup,
-  Location:location
-}" -o json > all-resources.json
+# Check naming compliance across ALL subscriptions using Resource Graph
 
-# Check App Services naming compliance
-az webapp list --query "[].{
-  Name:name,
-  Compliant:contains(name, 'app-') || contains(name, 'web-')
-}" -o table
+# App Services naming compliance
+az graph query -q "
+Resources
+| where type =~ 'microsoft.web/sites'
+| extend isCompliant = name startswith 'app-' or name startswith 'web-' or name startswith 'func-' or name startswith 'wa' or name startswith 'ws' or name startswith 'fn'
+| summarize Compliant=countif(isCompliant), NonCompliant=countif(not(isCompliant)) by subscriptionId
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 
-# Check Function Apps naming
-az functionapp list --query "[].{
-  Name:name,
-  Compliant:contains(name, 'func-') || contains(name, 'fa-')
-}" -o table
-
-# Check App Insights naming
-az monitor app-insights component list --query "[].{
-  Name:name,
-  Compliant:contains(name, 'appi-') || contains(name, 'ai-')
-}" -o table
-
-# Check LAW naming
-az monitor log-analytics workspace list --query "[].{
-  Name:name,
-  Compliant:contains(name, 'law-') || contains(name, 'log-')
-}" -o table
+# Log Analytics Workspace naming compliance
+az graph query -q "
+Resources
+| where type =~ 'microsoft.operationalinsights/workspaces'
+| extend isCompliant = name startswith 'law-' or name startswith 'log-' or name startswith 'lw'
+| summarize Compliant=countif(isCompliant), NonCompliant=countif(not(isCompliant)) by subscriptionId
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 ```
 
 ### 5.3 Naming Audit Checklist
@@ -429,10 +447,6 @@ az monitor log-analytics workspace list --query "[].{
 
 ### 6.2 Tag Compliance Commands
 
-**Option A: Azure Resource Graph (ALL subscriptions at once - RECOMMENDED)**
-
-> ⚠️ **Remember**: Set `ALL_SUBS=$(az account list --query "[?state=='Enabled'].id" -o tsv)` first!
-
 ```bash
 # Resources missing 'env' tag across ALL subscriptions
 az graph query -q "
@@ -442,7 +456,7 @@ Resources
 | order by Total desc
 " --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 
-# Resources missing multiple required tags
+# Resources missing multiple required tags (summary by subscription)
 az graph query -q "
 Resources
 | extend 
@@ -460,38 +474,8 @@ Resources
 " --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 
 # Export to CSV (uses audit script)
-# PowerShell: Results in audit-*/summary/missing-tag-*.csv
-.\scripts\multi-subscription-audit.ps1
-```
-
-**Option B: Single Subscription**
-```bash
-REQUIRED_TAGS=("env" "workload" "owner" "costCenter")
-
-# Export all resources with their tags
-az resource list --query "[].{
-  Name:name,
-  Type:type,
-  ResourceGroup:resourceGroup,
-  Tags:tags
-}" -o json > resources-with-tags.json
-
-# Count resources missing 'env' tag
-az resource list --query "[?tags.env==null].{Name:name, Type:type, RG:resourceGroup}" -o table
-
-# Count resources missing 'workload' tag
-az resource list --query "[?tags.workload==null].{Name:name, Type:type, RG:resourceGroup}" -o table
-
-# Count resources missing 'owner' tag
-az resource list --query "[?tags.owner==null].{Name:name, Type:type, RG:resourceGroup}" -o table
-
-# Count resources missing 'costCenter' tag
-az resource list --query "[?tags.costCenter==null].{Name:name, Type:type, RG:resourceGroup}" -o table
-
-# Get tag compliance percentage
-TOTAL=$(az resource list --query "length(@)")
-MISSING_ENV=$(az resource list --query "[?tags.env==null] | length(@)")
-echo "Tag Compliance (env): $((100 - ($MISSING_ENV * 100 / $TOTAL)))%"
+# Results in audit-*/summary/missing-tag-*.csv
+./scripts/multi-subscription-audit.sh
 ```
 
 ### 6.3 Tag Audit Checklist
@@ -534,10 +518,8 @@ az policy state summarize --query "{
 
 ### 7.1 App Insights Inventory
 
-**Option A: Azure Resource Graph (ALL subscriptions)**
 ```bash
-# Ensure $ALL_SUBS is set: ALL_SUBS=$(az account list --query "[?state=='Enabled'].id" -o tsv)
-
+# App Insights inventory across ALL subscriptions
 az graph query -q "
 Resources
 | where type =~ 'microsoft.insights/components'
@@ -548,28 +530,12 @@ Resources
     location,
     ingestionMode=properties.IngestionMode,
     workspaceId=properties.WorkspaceResourceId,
-    retentionDays=properties.RetentionInDays,
-    isClassic=isnull(properties.WorkspaceResourceId)
-| order by isClassic desc, subscriptionId
+    retentionDays=properties.RetentionInDays
+| order by subscriptionId, name
 " --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 ```
 
-**Option B: Single Subscription**
-```bash
-# Full App Insights inventory
-az monitor app-insights component list --query "[].{
-  Name:name,
-  ResourceGroup:resourceGroup,
-  Location:location,
-  IngestionMode:ingestionMode,
-  WorkspaceId:workspaceResourceId,
-  RetentionDays:retentionInDays,
-  SamplingPercentage:samplingPercentage,
-  DisableIpMasking:disableIpMasking,
-  PublicIngestion:publicNetworkAccessForIngestion,
-  PublicQuery:publicNetworkAccessForQuery
-}" -o table
-```
+> ⚠️ **Current Audit Finding**: 0 Application Insights instances in target subscriptions!
 
 ### 7.2 App Insights Audit Checklist
 
@@ -621,10 +587,8 @@ done
 
 ### 8.1 LAW Inventory
 
-**Option A: Azure Resource Graph (ALL subscriptions)**
 ```bash
-# Ensure $ALL_SUBS is set: ALL_SUBS=$(az account list --query "[?state=='Enabled'].id" -o tsv)
-
+# LAW inventory across ALL subscriptions
 az graph query -q "
 Resources
 | where type =~ 'microsoft.operationalinsights/workspaces'
@@ -638,22 +602,6 @@ Resources
     dailyCapGb=properties.workspaceCapping.dailyQuotaGb
 | order by subscriptionId, name
 " --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
-```
-
-**Option B: Single Subscription**
-```bash
-# Full LAW inventory
-az monitor log-analytics workspace list --query "[].{
-  Name:name,
-  ResourceGroup:resourceGroup,
-  Location:location,
-  Sku:sku.name,
-  RetentionDays:retentionInDays,
-  DailyCapGb:workspaceCapping.dailyQuotaGb,
-  IngestionStatus:workspaceCapping.quotaNextResetTime,
-  PublicIngestion:publicNetworkAccessForIngestion,
-  PublicQuery:publicNetworkAccessForQuery
-}" -o table
 ```
 
 ### 8.2 LAW Audit Checklist
@@ -904,10 +852,8 @@ az consumption budget list --query "[].{
 
 ### 12.1 Action Group Inventory
 
-**Option A: Azure Resource Graph (ALL subscriptions)**
 ```bash
-# Ensure $ALL_SUBS is set: ALL_SUBS=$(az account list --query "[?state=='Enabled'].id" -o tsv)
-
+# Action Groups across ALL subscriptions
 az graph query -q "
 Resources
 | where type =~ 'microsoft.insights/actiongroups'
@@ -922,28 +868,24 @@ Resources
 " --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 ```
 
-**Option B: Single Subscription**
-```bash
-# List all action groups
-az monitor action-group list --query "[].{
-  Name:name,
-  ResourceGroup:resourceGroup,
-  EmailCount:length(emailReceivers),
-  SmsCount:length(smsReceivers),
-  WebhookCount:length(webhookReceivers),
-  LogicAppCount:length(logicAppReceivers),
-  Enabled:enabled
-}" -o table
-```
-
 ### 12.2 Alert Rules Inventory
 
-**Option A: Azure Resource Graph (ALL subscriptions)**
 ```bash
-# All alert rules across tenant (requires --subscriptions for multi-sub!)
+# All alert rules across ALL subscriptions (summary by type)
 az graph query -q "
 Resources
 | where type in~ ('microsoft.insights/metricalerts', 'microsoft.insights/scheduledqueryrules', 'microsoft.insights/activitylogalerts')
+| extend alertType = case(
+    type =~ 'microsoft.insights/metricalerts', 'Metric Alert',
+    type =~ 'microsoft.insights/scheduledqueryrules', 'Scheduled Query Alert',
+    'Activity Log Alert')
+| summarize Total=count() by subscriptionId, alertType
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# Detailed alert rules with enabled status
+az graph query -q "
+Resources
+| where type in~ ('microsoft.insights/metricalerts', 'microsoft.insights/scheduledqueryrules')
 | project 
     name,
     subscriptionId,
@@ -951,28 +893,8 @@ Resources
     type,
     severity=properties.severity,
     enabled=properties.enabled
-| summarize Total=count() by subscriptionId, type
+| order by subscriptionId, type, name
 " --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
-```
-
-**Option B: Single Subscription**
-```bash
-# Metric alerts
-az monitor metrics alert list --query "[].{
-  Name:name,
-  ResourceGroup:resourceGroup,
-  Severity:severity,
-  Enabled:enabled,
-  TargetResource:scopes[0]
-}" -o table
-
-# Log/scheduled query alerts
-az monitor scheduled-query list --query "[].{
-  Name:name,
-  ResourceGroup:resourceGroup,
-  Severity:severity,
-  Enabled:enabled
-}" -o table 2>/dev/null
 ```
 
 ### 12.3 Alert Coverage Audit
@@ -1271,7 +1193,6 @@ az portal dashboard list --query "[].{
 
 | Finding | Priority | Remediation | Effort |
 |---------|----------|-------------|--------|
-| Classic App Insights in use | P1 | Migrate to workspace-based | Medium |
 | No alerts configured | P1 | Deploy baseline alert set | Low |
 | PII in logs | P1 | Implement safe logging, purge data | High |
 | Missing tags | P2 | Deploy tag policy, remediate | Low |
@@ -1308,11 +1229,10 @@ ALL_SUBS=$(az account list --query "[?state=='Enabled'].id" -o tsv)
 az graph query -q "Resources | summarize Total=count() by subscriptionId" \
   --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 
-# Find Classic App Insights across ALL subscriptions (CRITICAL!)
+# App Insights coverage summary by subscription
 az graph query -q "Resources 
 | where type =~ 'microsoft.insights/components' 
-| where isnull(properties.WorkspaceResourceId)
-| project name, subscriptionId, resourceGroup" \
+| summarize Total=count() by subscriptionId" \
   --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 
 # Resources missing required tags
@@ -1336,24 +1256,21 @@ az graph query -q "Resources
 
 ### A.2 Automated Multi-Subscription Audit
 
-**Recommended: Use the provided audit scripts for comprehensive exports.**
+**Recommended: Use the provided audit script for comprehensive exports.**
 
 ```bash
-# PowerShell (Windows)
-.\scripts\multi-subscription-audit.ps1 -OutputDir "client-audit"
-
-# Bash (Linux/macOS/WSL)
+# Run the audit script
 chmod +x scripts/multi-subscription-audit.sh
 ./scripts/multi-subscription-audit.sh
 
-# With parallel execution
+# With parallel execution for speed
 PARALLEL_JOBS=10 ./scripts/multi-subscription-audit.sh
 ```
 
 **Output structure:**
 ```
 audit-YYYYMMDD-HHMMSS/
-├── subscriptions.json          # All subscriptions
+├── subscriptions.json          # Target subscriptions
 ├── subscriptions/
 │   └── <subscription-id>/
 │       ├── all-resources.json
@@ -1364,30 +1281,7 @@ audit-YYYYMMDD-HHMMSS/
 └── summary/
     ├── totals.json             # Aggregated totals
     ├── resource-counts.csv     # Excel-ready
-    ├── classic-app-insights.csv
     └── missing-tag-*.csv
-```
-
-### A.3 Legacy Single-Subscription Export
-
-```bash
-#!/bin/bash
-# Export data for a single subscription only
-
-AUDIT_DIR="audit-$(date +%Y%m%d)"
-mkdir -p $AUDIT_DIR
-
-az resource list -o json > $AUDIT_DIR/all-resources.json
-az webapp list -o json > $AUDIT_DIR/app-services.json
-az functionapp list -o json > $AUDIT_DIR/function-apps.json
-az monitor app-insights component list -o json > $AUDIT_DIR/app-insights.json
-az monitor log-analytics workspace list -o json > $AUDIT_DIR/log-analytics.json
-az monitor action-group list -o json > $AUDIT_DIR/action-groups.json
-az monitor scheduled-query list -o json 2>/dev/null > $AUDIT_DIR/scheduled-queries.json
-az monitor metrics alert list -o json > $AUDIT_DIR/metric-alerts.json
-az policy assignment list -o json > $AUDIT_DIR/policy-assignments.json
-
-echo "Audit data exported to $AUDIT_DIR/"
 ```
 
 ---
@@ -1490,6 +1384,6 @@ Overall Maturity Score: **[X]/100** - [Level X: Description]
 
 ---
 
-*Checklist Version: 2.0 | Last Updated: February 3, 2026*  
-*Scripts: [`multi-subscription-audit.sh`](../scripts/multi-subscription-audit.sh) | [`multi-subscription-audit.ps1`](../scripts/multi-subscription-audit.ps1)*  
+*Checklist Version: 2.1 | Last Updated: February 3, 2026*  
+*Script: [`multi-subscription-audit.sh`](../scripts/multi-subscription-audit.sh)*  
 *Quick Commands: [`multi-subscription-quick-commands.md`](multi-subscription-quick-commands.md)*

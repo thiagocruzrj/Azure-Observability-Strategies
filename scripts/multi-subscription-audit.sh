@@ -47,20 +47,44 @@ setup_output_dir() {
 }
 
 # ============================================================================
-# 1. GET ALL SUBSCRIPTIONS
+# 1. GET TARGET SUBSCRIPTIONS (Scoped to specific subscriptions)
 # ============================================================================
 
+# Define the specific subscriptions to audit
+# Update this list to add/remove subscriptions from the audit scope
+TARGET_SUBSCRIPTIONS=(
+    "76cd0ab7-9ab0-412a-b927-cc10e3d656d3|Edv2 BR QA"
+    "039c62ed-7e0c-4d56-bb3f-be23033758ce|EVASM NEU PRO"
+    "98d67ae7-6840-4bbb-a9db-23f12702daec|EVASM NEU QA"
+    "8300de04-726b-4119-8637-1920254b613b|EVASM WUS PRO (LATAM)"
+    "4f9b5670-6e01-452b-9068-534c3e8b80fd|MAE LATAM PRO"
+    "04669dbd-24c3-4cbe-a6a0-dbae82a9cb91|MAE NEU PRO"
+    "658a3795-22d3-4ac1-a87c-70810b337754|MAE NEU QA"
+    "2e3c305c-04a8-48f7-b8f7-e615c5bf8669|RecursosInternos-DevOps"
+    "1d08dafe-eb6c-4aa7-b738-a851f0959ba7|RecursosInternos-DevOps QA"
+)
+
 get_all_subscriptions() {
-    log_info "Fetching all accessible subscriptions..."
+    log_info "Using predefined list of ${#TARGET_SUBSCRIPTIONS[@]} target subscriptions..."
     
-    az account list --query "[?state=='Enabled'].{
-        name:name,
-        id:id,
-        tenantId:tenantId
-    }" -o json > "$AUDIT_DIR/subscriptions.json"
+    # Build JSON array from the target subscriptions
+    echo "[" > "$AUDIT_DIR/subscriptions.json"
+    first=true
+    for sub in "${TARGET_SUBSCRIPTIONS[@]}"; do
+        IFS='|' read -r sub_id sub_name <<< "$sub"
+        if [ "$first" = true ]; then
+            first=false
+        else
+            echo "," >> "$AUDIT_DIR/subscriptions.json"
+        fi
+        # Get tenant ID from Azure (or use placeholder if not accessible)
+        tenant_id=$(az account show --subscription "$sub_id" --query "tenantId" -o tsv 2>/dev/null || echo "unknown")
+        echo "  {\"name\": \"$sub_name\", \"id\": \"$sub_id\", \"tenantId\": \"$tenant_id\"}" >> "$AUDIT_DIR/subscriptions.json"
+    done
+    echo "]" >> "$AUDIT_DIR/subscriptions.json"
     
     SUBSCRIPTION_COUNT=$(jq length "$AUDIT_DIR/subscriptions.json")
-    log_success "Found $SUBSCRIPTION_COUNT enabled subscriptions"
+    log_success "Configured $SUBSCRIPTION_COUNT target subscriptions for audit"
     
     # Create CSV for easy viewing
     echo "SubscriptionName,SubscriptionId,TenantId" > "$AUDIT_DIR/subscriptions.csv"
@@ -74,6 +98,9 @@ get_all_subscriptions() {
 audit_subscription() {
     local SUB_ID="$1"
     local SUB_NAME="$2"
+    # Strip any carriage returns from Windows line endings
+    SUB_ID=$(echo "$SUB_ID" | tr -d '\r')
+    SUB_NAME=$(echo "$SUB_NAME" | tr -d '\r')
     local OUTPUT_DIR="$AUDIT_DIR/subscriptions/$SUB_ID"
     
     mkdir -p "$OUTPUT_DIR"
@@ -327,12 +354,24 @@ check_alert_coverage() {
         "\(.subscriptionId),\(.subscriptionName),\(.resourceCounts.appServices),\(.resourceCounts.functionApps),\(.resourceCounts.metricAlerts),\(.resourceCounts.scheduledQueryAlerts)"' \
         "$AUDIT_DIR/summary/full-audit-summary.json" | while IFS=',' read -r sub_id sub_name apps funcs metric_alerts query_alerts; do
         
+        # Clean values - remove any carriage returns
+        apps=$(echo "$apps" | tr -d '\r')
+        funcs=$(echo "$funcs" | tr -d '\r')
+        metric_alerts=$(echo "$metric_alerts" | tr -d '\r')
+        query_alerts=$(echo "$query_alerts" | tr -d '\r')
+        
+        # Default to 0 if empty
+        apps=${apps:-0}
+        funcs=${funcs:-0}
+        metric_alerts=${metric_alerts:-0}
+        query_alerts=${query_alerts:-0}
+        
         local TOTAL_APPS=$((apps + funcs))
         local TOTAL_ALERTS=$((metric_alerts + query_alerts))
         local RATIO="N/A"
         
         if [ "$TOTAL_APPS" -gt 0 ]; then
-            RATIO=$(echo "scale=2; $TOTAL_ALERTS / $TOTAL_APPS" | bc)
+            RATIO=$(echo "scale=2; $TOTAL_ALERTS / $TOTAL_APPS" | bc 2>/dev/null || echo "N/A")
         fi
         
         echo "$sub_id,$sub_name,$apps,$funcs,$metric_alerts,$query_alerts,$RATIO" >> "$OUTPUT"

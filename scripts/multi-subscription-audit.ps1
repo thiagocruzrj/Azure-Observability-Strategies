@@ -29,8 +29,22 @@ function Write-Log {
 }
 
 # ============================================================================
-# 1. SETUP AND GET SUBSCRIPTIONS
+# 1. SETUP AND GET SUBSCRIPTIONS (Scoped to specific subscriptions)
 # ============================================================================
+
+# Define the specific subscriptions to audit
+# Update this list to add/remove subscriptions from the audit scope
+$TargetSubscriptions = @(
+    @{ id = "76cd0ab7-9ab0-412a-b927-cc10e3d656d3"; name = "Edv2 BR QA" }
+    @{ id = "039c62ed-7e0c-4d56-bb3f-be23033758ce"; name = "EVASM NEU PRO" }
+    @{ id = "98d67ae7-6840-4bbb-a9db-23f12702daec"; name = "EVASM NEU QA" }
+    @{ id = "8300de04-726b-4119-8637-1920254b613b"; name = "EVASM WUS PRO (LATAM)" }
+    @{ id = "4f9b5670-6e01-452b-9068-534c3e8b80fd"; name = "MAE LATAM PRO" }
+    @{ id = "04669dbd-24c3-4cbe-a6a0-dbae82a9cb91"; name = "MAE NEU PRO" }
+    @{ id = "658a3795-22d3-4ac1-a87c-70810b337754"; name = "MAE NEU QA" }
+    @{ id = "2e3c305c-04a8-48f7-b8f7-e615c5bf8669"; name = "RecursosInternos-DevOps" }
+    @{ id = "1d08dafe-eb6c-4aa7-b738-a851f0959ba7"; name = "RecursosInternos-DevOps QA" }
+)
 
 function Initialize-AuditDirectory {
     $dirs = @(
@@ -46,15 +60,27 @@ function Initialize-AuditDirectory {
 }
 
 function Get-AllSubscriptions {
-    Write-Log "Fetching all accessible subscriptions..."
+    Write-Log "Using predefined list of $($TargetSubscriptions.Count) target subscriptions..."
     
-    $subscriptions = az account list --query "[?state=='Enabled'].{name:name, id:id, tenantId:tenantId}" | ConvertFrom-Json
+    # Build subscription objects with tenant IDs
+    $subscriptions = $TargetSubscriptions | ForEach-Object {
+        $tenantId = try {
+            (az account show --subscription $_.id --query "tenantId" -o tsv 2>$null)
+        } catch { "unknown" }
+        
+        [PSCustomObject]@{
+            name = $_.name
+            id = $_.id
+            tenantId = if ($tenantId) { $tenantId } else { "unknown" }
+        }
+    }
+    
     $subscriptions | ConvertTo-Json -Depth 10 | Out-File "$OutputDir\subscriptions.json"
     
     # Create CSV
     $subscriptions | Export-Csv "$OutputDir\subscriptions.csv" -NoTypeInformation
     
-    Write-Log "Found $($subscriptions.Count) enabled subscriptions" "SUCCESS"
+    Write-Log "Configured $($subscriptions.Count) target subscriptions for audit" "SUCCESS"
     return $subscriptions
 }
 

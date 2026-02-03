@@ -208,3 +208,31 @@ yarn-error.log*
 CodeCoverage/
 BenchmarkDotNet.Artifacts/
 NUL
+
+# =============================================================================
+# Azure Audit Output Files
+# =============================================================================
+# Audit output directories (contain sensitive subscription data)
+audit-*/
+client-audit/
+
+# Subscription inventory files
+subscriptions.txt
+audit-subscriptions.json
+
+# Exported resource data (may contain sensitive info)
+*-resources.json
+*-alerts.json
+*-insights.json
+*-analytics.json
+
+# Audit CSV exports
+missing-tag-*.csv
+resource-counts.csv
+
+# Audit summary files
+totals.json
+summary.json
+
+# Generated audit reports
+AUDIT-REPORT.md
