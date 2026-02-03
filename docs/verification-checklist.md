@@ -722,4 +722,21 @@ curl https://func-demo-dev-weu.azurewebsites.net/api/process
 
 ---
 
+## 📋 Client Infrastructure Audit
+
+For assessing client Azure monitoring implementations across multiple subscriptions, see:
+
+📄 **[Azure Monitoring Audit Checklist](audit-checklist-monitoring.md)**
+
+This comprehensive audit checklist includes:
+- Pre-audit setup and subscription inventory
+- 15 assessment categories with scoring matrices
+- 100+ individual checks with Azure CLI commands
+- KQL queries for deep analysis
+- Maturity Level scoring (Level 1-5)
+- Remediation priority matrix (P1-P4)
+- Ready-to-use audit report template
+
+---
+
 *Last updated: February 3, 2026*
