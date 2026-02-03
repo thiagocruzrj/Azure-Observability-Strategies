@@ -25,10 +25,11 @@
 12. [Alerting & Action Groups](#12-alerting--action-groups)
 13. [Diagnostic Settings](#13-diagnostic-settings)
 14. [RBAC & Security](#14-rbac--security)
-15. [Governance & Policies](#15-governance--policies)
-16. [Workbooks & Dashboards](#16-workbooks--dashboards)
-17. [Scoring Matrix](#17-scoring-matrix)
-18. [Remediation Priorities](#18-remediation-priorities)
+15. [Azure Monitor Configuration](#15-azure-monitor-configuration) ⭐ NEW
+16. [Governance & Policies](#16-governance--policies)
+17. [Workbooks & Dashboards](#17-workbooks--dashboards)
+18. [Scoring Matrix](#18-scoring-matrix)
+19. [Remediation Priorities](#19-remediation-priorities)
 
 ---
 
@@ -224,37 +225,18 @@ az graph query -q "Resources
  echo "=== Alert Rules by Metric Type ===" && az graph query -q "Resources | where type =~ 'microsoft.insights/metricalerts' | extend metricName = tostring(properties.criteria.allOf[0].metricName) | summarize Total=count() by metricName | order by Total desc" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 ```
 
-### 2.2 Automated Multi-Subscription Audit
-
-For comprehensive audits, use the provided bash script:
-
-> ⚠️ **Prerequisites:**
-> - Bash script requires `jq` installed: `choco install jq` or download from [jqlang/jq](https://github.com/jqlang/jq/releases)
-
-```bash
-# Install jq first (Windows Git Bash)
-# Option 1: choco install jq
-# Option 2: curl -L -o /usr/bin/jq.exe https://github.com/jqlang/jq/releases/latest/download/jq-win64.exe
-
-chmod +x scripts/multi-subscription-audit.sh
-./scripts/multi-subscription-audit.sh
-
-# With parallel jobs for speed
-PARALLEL_JOBS=10 ./scripts/multi-subscription-audit.sh
-```
-
-### 2.3 Multi-Subscription Discovery Checklist
+### 2.2 Multi-Subscription Discovery Checklist
 
 > 💡 **Remember**: Add `--subscriptions $ALL_SUBS` to all Resource Graph queries!
 
 | # | Check | Command | Finding | Score |
 |---|-------|---------|---------|-------|
-| 2.3.1 | Total subscriptions in scope | `echo $ALL_SUBS | wc -w` | 9 | |
-| 2.3.2 | Total resources across tenant | `az graph query -q "Resources | count" --subscriptions $ALL_SUBS --first 1000` | | |
-| 2.3.3 | Total App Insights instances | `az graph query -q "Resources | where type =~ 'microsoft.insights/components' | count" --subscriptions $ALL_SUBS --first 1000` | 27 | |
-| 2.3.4 | Total Log Analytics Workspaces | `az graph query -q "Resources | where type =~ 'microsoft.operationalinsights/workspaces' | count" --subscriptions $ALL_SUBS --first 1000` | 26 | |
-| 2.3.5 | Total alert rules (all types) | See 2.1.5 | 216 | |
-| 2.3.6 | Subscriptions without any monitoring | Cross-reference results | | |
+| 2.2.1 | Total subscriptions in scope | `echo $ALL_SUBS | wc -w` | 9 | |
+| 2.2.2 | Total resources across tenant | `az graph query -q "Resources | count" --subscriptions $ALL_SUBS --first 1000` | | |
+| 2.2.3 | Total App Insights instances | `az graph query -q "Resources | where type =~ 'microsoft.insights/components' | count" --subscriptions $ALL_SUBS --first 1000` | 27 | |
+| 2.2.4 | Total Log Analytics Workspaces | `az graph query -q "Resources | where type =~ 'microsoft.operationalinsights/workspaces' | count" --subscriptions $ALL_SUBS --first 1000` | 26 | |
+| 2.2.5 | Total alert rules (all types) | See 2.1.5 | 216 | |
+| 2.2.6 | Subscriptions without any monitoring | Cross-reference results | | |
 
 ---
 
@@ -947,13 +929,40 @@ requests
 
 ### 13.1 Diagnostic Settings Inventory
 
+> ⚠️ **Note**: Diagnostic Settings are extension resources and not directly queryable via Resource Graph. Use the subscription-level commands below.
+
 ```bash
-# Check diagnostic settings for App Services
-az webapp list --query "[].{Name:name, ResourceGroup:resourceGroup, Id:id}" -o tsv | while read name rg id; do
-  echo "=== $name ==="
-  az monitor diagnostic-settings list --resource "$id" \
-    --query "[].{Name:name, WorkspaceId:workspaceId, Categories:logs[*].category}" -o table 2>/dev/null || echo "No diagnostic settings"
+# Quick check: Count App Services per subscription (for comparison)
+az graph query -q "
+Resources
+| where type =~ 'microsoft.web/sites'
+| summarize AppCount=count() by subscriptionId
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# For each subscription, check diagnostic settings on App Services
+# This requires iterating through subscriptions (run during audit)
+for SUB_ID in $ALL_SUBS; do
+  echo "=== Subscription: $SUB_ID ==="
+  az account set --subscription "$SUB_ID"
+  
+  # List App Services with diagnostic settings status
+  az webapp list --query "[].{Name:name, RG:resourceGroup, Id:id}" -o tsv 2>/dev/null | while IFS=$'\t' read -r name rg id; do
+    DIAG_COUNT=$(az monitor diagnostic-settings list --resource "$id" --query "length(@)" -o tsv 2>/dev/null || echo "0")
+    if [ "$DIAG_COUNT" -eq "0" ]; then
+      echo "❌ NO DIAG: $name"
+    else
+      echo "✅ HAS DIAG: $name ($DIAG_COUNT settings)"
+    fi
+  done
 done
+```
+
+**Quick summary approach (faster):**
+```bash
+# Count total App Services
+TOTAL_APPS=$(az graph query -q "Resources | where type =~ 'microsoft.web/sites' | count" --subscriptions $ALL_SUBS --first 1000 --query "data[0].Count" -o tsv)
+echo "Total App Services: $TOTAL_APPS"
+echo "Review a sample of apps in each subscription for diagnostic settings"
 ```
 
 ### 13.2 Diagnostic Settings Checklist
@@ -988,13 +997,32 @@ done
 ### 14.1 Monitoring RBAC Roles
 
 ```bash
-# Check monitoring-specific role assignments
-az role assignment list --all --query "[?contains(roleDefinitionName, 'Monitoring') || contains(roleDefinitionName, 'Log Analytics')].{
-  Principal:principalName,
-  Role:roleDefinitionName,
-  Scope:scope
-}" -o table
+# Role Assignments across ALL subscriptions (Resource Graph)
+az graph query -q "
+AuthorizationResources
+| where type =~ 'microsoft.authorization/roleassignments'
+| extend principalType = tostring(properties.principalType)
+| summarize AssignmentCount=count() by subscriptionId, principalType
+| order by AssignmentCount desc
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# Detailed role assignments (sample)
+az graph query -q "
+AuthorizationResources
+| where type =~ 'microsoft.authorization/roleassignments'
+| extend principalId = tostring(properties.principalId)
+| extend principalType = tostring(properties.principalType)
+| extend roleDefinitionId = tostring(properties.roleDefinitionId)
+| extend scope = tostring(properties.scope)
+| project subscriptionId, principalType, roleDefinitionId, scope
+| take 50
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# List monitoring-related role definitions (single subscription)
+az role definition list --query "[?contains(roleName, 'Monitoring') || contains(roleName, 'Log Analytics')].{Name:roleName, Type:roleType}" -o table
 ```
+
+> 💡 **Note**: Use `AuthorizationResources` table for cross-subscription role assignment queries. Role definitions can be queried using `az role definition list`.
 
 ### 14.2 RBAC Audit Checklist
 
@@ -1032,9 +1060,193 @@ az monitor app-insights component list --query "[].{
 
 ---
 
-## 15. Governance & Policies
+## 15. Azure Monitor Configuration
 
-### 15.1 Azure Policy Inventory
+### 15.1 Data Collection Rules (DCR) Inventory
+
+> **Note:** Data Collection Rules are the modern way to configure data collection with Azure Monitor Agent. If no DCRs exist, VMs may be using legacy agents or have no monitoring.
+
+```bash
+# List all Data Collection Rules
+az graph query -q "
+  resources
+  | where type == 'microsoft.insights/datacollectionrules'
+  | project name, resourceGroup, subscriptionId, location
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# Count DCRs by subscription
+az graph query -q "
+  resources
+  | where type == 'microsoft.insights/datacollectionrules'
+  | summarize count() by subscriptionId
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+```
+
+### 15.2 Data Collection Endpoints
+
+> **Note:** Data Collection Endpoints are required for private link scenarios and some DCR configurations.
+
+```bash
+# List Data Collection Endpoints
+az graph query -q "
+  resources
+  | where type == 'microsoft.insights/datacollectionendpoints'
+  | project name, resourceGroup, subscriptionId, location
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+```
+
+### 15.3 Autoscale Settings
+
+> **Important:** Production App Service Plans should have autoscale configured. Disabled autoscale settings may indicate incomplete setup.
+
+```bash
+# List all Autoscale Settings with status
+az graph query -q "
+  resources
+  | where type == 'microsoft.insights/autoscalesettings'
+  | project name, resourceGroup, subscriptionId, location,
+      targetResourceUri=properties.targetResourceUri,
+      enabled=properties.enabled
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# Summary: Count enabled vs disabled autoscale
+az graph query -q "
+  resources
+  | where type == 'microsoft.insights/autoscalesettings'
+  | summarize total=count(),
+      enabled=countif(properties.enabled == true),
+      disabled=countif(properties.enabled == false)
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# Find App Service Plans without autoscale
+az graph query -q "
+  resources
+  | where type == 'microsoft.web/serverfarms'
+  | where sku.tier in~ ('Standard', 'Premium', 'PremiumV2', 'PremiumV3')
+  | project planId=tolower(id), name, resourceGroup, subscriptionId, sku=sku.name
+  | join kind=leftouter (
+      resources
+      | where type == 'microsoft.insights/autoscalesettings'
+      | project planId=tolower(properties.targetResourceUri), autoscaleName=name
+  ) on planId
+  | where isempty(autoscaleName)
+  | project name, resourceGroup, subscriptionId, sku
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+```
+
+### 15.4 Service Health Alerts
+
+> **Critical:** Every subscription should have Service Health alerts configured to receive proactive notifications about Azure outages.
+
+```bash
+# List Service Health Alerts
+az graph query -q "
+  resources
+  | where type == 'microsoft.insights/activitylogalerts'
+  | where properties.condition.allOf[0].equals == 'ServiceHealth'
+  | project name, resourceGroup, subscriptionId, enabled=properties.enabled
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# Find subscriptions WITHOUT Service Health alerts
+az graph query -q "
+  resourcecontainers
+  | where type == 'microsoft.resources/subscriptions'
+  | project subscriptionId, subscriptionName=name
+  | join kind=leftouter (
+      resources
+      | where type == 'microsoft.insights/activitylogalerts'
+      | where properties.condition.allOf[0].equals == 'ServiceHealth'
+      | distinct subscriptionId
+      | project subscriptionId, hasHealthAlert=true
+  ) on subscriptionId
+  | where isempty(hasHealthAlert)
+  | project subscriptionName, subscriptionId
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+```
+
+### 15.5 VM Monitoring Agents
+
+> **Note:** Azure Monitor Agent (AMA) is the recommended agent, replacing legacy MMA/OMS agents. VMs without monitoring agents have no telemetry collection.
+
+```bash
+# List VMs with Azure Monitor Agent (AMA)
+az graph query -q "
+  resources
+  | where type == 'microsoft.compute/virtualmachines/extensions'
+  | where properties.publisher == 'Microsoft.Azure.Monitor'
+  | project extensionName=name, vmName=split(id, '/')[8],
+      resourceGroup, subscriptionId, extensionType=properties.type
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# List VMs with Legacy MMA/OMS Agent
+az graph query -q "
+  resources
+  | where type == 'microsoft.compute/virtualmachines/extensions'
+  | where properties.publisher == 'Microsoft.EnterpriseCloud.Monitoring'
+  | project extensionName=name, vmName=split(id, '/')[8],
+      resourceGroup, subscriptionId, extensionType=properties.type
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# Find VMs with NO monitoring agent (neither AMA nor MMA)
+az graph query -q "
+  resources
+  | where type == 'microsoft.compute/virtualmachines'
+  | project vmId=tolower(id), vmName=name, resourceGroup, subscriptionId
+  | join kind=leftouter (
+      resources
+      | where type == 'microsoft.compute/virtualmachines/extensions'
+      | where properties.publisher in~ ('Microsoft.Azure.Monitor', 'Microsoft.EnterpriseCloud.Monitoring')
+      | project vmId=tolower(substring(id, 0, indexof(id, '/extensions/'))), hasAgent=true
+  ) on vmId
+  | where isempty(hasAgent)
+  | project vmName, resourceGroup, subscriptionId
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+```
+
+### 15.6 Azure Monitor Private Link Scope (AMPLS)
+
+> **Note:** Private Link Scopes enable private network connectivity for Azure Monitor. Required for secure/isolated environments.
+
+```bash
+# List Private Link Scopes
+az graph query -q "
+  resources
+  | where type == 'microsoft.insights/privatelinkscopes'
+  | project name, resourceGroup, subscriptionId, location
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+```
+
+### 15.7 Managed Prometheus & Grafana
+
+> **Note:** For container/AKS workloads, Azure Managed Prometheus and Grafana provide integrated metrics and dashboards.
+
+```bash
+# List Azure Monitor Workspaces (Managed Prometheus) and Grafana
+az graph query -q "
+  resources
+  | where type in~ ('microsoft.monitor/accounts', 'microsoft.dashboard/grafana')
+  | project name, type, resourceGroup, subscriptionId, location
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+```
+
+### 15.8 Azure Monitor Configuration Checklist
+
+| # | Check | Expected | Finding | Score |
+|---|-------|----------|---------|-------|
+| 15.8.1 | Data Collection Rules exist | If VMs present | | |
+| 15.8.2 | Azure Monitor Agent on VMs | All VMs | | |
+| 15.8.3 | No legacy MMA/OMS agents | Migrated to AMA | | |
+| 15.8.4 | Autoscale on production App Service Plans | Enabled | | |
+| 15.8.5 | Disabled autoscale settings reviewed | Document reason | | |
+| 15.8.6 | Service Health alerts per subscription | All subscriptions | | |
+| 15.8.7 | Private Link Scope (if required) | Document | | |
+| 15.8.8 | Managed Prometheus/Grafana (if AKS) | If containers | | |
+
+---
+
+## 16. Governance & Policies
+
+### 16.1 Azure Policy Inventory
 
 ```bash
 # List relevant policies
@@ -1053,18 +1265,18 @@ az policy assignment list --query "[].{
 }" -o table
 ```
 
-### 15.2 Governance Checklist
+### 16.2 Governance Checklist
 
 | # | Check | Expected | Finding | Score |
 |---|-------|----------|---------|-------|
-| 15.2.1 | Tag enforcement policy exists | Yes | | |
-| 15.2.2 | Diagnostic settings policy exists | Yes | | |
-| 15.2.3 | Allowed locations policy exists | If data residency required | | |
-| 15.2.4 | Policies in Audit mode (not blocking) | Document | | |
-| 15.2.5 | Policy compliance monitored | Yes | | |
-| 15.2.6 | Exception process documented | Yes | | |
+| 16.2.1 | Tag enforcement policy exists | Yes | | |
+| 16.2.2 | Diagnostic settings policy exists | Yes | | |
+| 16.2.3 | Allowed locations policy exists | If data residency required | | |
+| 16.2.4 | Policies in Audit mode (not blocking) | Document | | |
+| 16.2.5 | Policy compliance monitored | Yes | | |
+| 16.2.6 | Exception process documented | Yes | | |
 
-### 15.3 Policy Compliance Summary
+### 16.3 Policy Compliance Summary
 
 ```bash
 # Get policy compliance summary
@@ -1079,9 +1291,9 @@ az policy state summarize --query "{
 
 ---
 
-## 16. Workbooks & Dashboards
+## 17. Workbooks & Dashboards
 
-### 16.1 Workbook Inventory
+### 17.1 Workbook Inventory
 
 ```bash
 # List Azure Monitor Workbooks
@@ -1093,7 +1305,7 @@ az monitor app-insights workbook list --query "[].{
 }" -o table 2>/dev/null
 ```
 
-### 16.2 Dashboard Inventory
+### 17.2 Dashboard Inventory
 
 ```bash
 # List Azure Dashboards
@@ -1104,7 +1316,7 @@ az portal dashboard list --query "[].{
 }" -o table 2>/dev/null
 ```
 
-### 16.3 Visualization Checklist
+### 17.3 Visualization Checklist
 
 | # | Check | Expected | Finding | Score |
 |---|-------|----------|---------|-------|
@@ -1121,7 +1333,7 @@ az portal dashboard list --query "[].{
 
 ---
 
-## 17. Scoring Matrix
+## 18. Scoring Matrix
 
 ### 17.1 Category Weights
 
@@ -1176,7 +1388,7 @@ az portal dashboard list --query "[].{
 
 ---
 
-## 18. Remediation Priorities
+## 19. Remediation Priorities
 
 ### 18.1 Priority Matrix
 
@@ -1252,11 +1464,19 @@ az graph query -q "Resources
   --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
 ```
 
-### A.2 Automated Multi-Subscription Audit
+### A.2 Automated Multi-Subscription Audit (Post-Audit Export)
 
-**Recommended: Use the provided audit script for comprehensive exports.**
+> 📋 **When to use**: Run the script at the end of the audit to generate JSON/CSV exports for the client deliverables.
+
+**Prerequisites:**
+- Bash (Git Bash on Windows, or Linux/macOS terminal)
+- `jq` installed: `choco install jq` or download from [jqlang/jq](https://github.com/jqlang/jq/releases)
 
 ```bash
+# Install jq first (Windows Git Bash)
+# Option 1: choco install jq
+# Option 2: curl -L -o /usr/bin/jq.exe https://github.com/jqlang/jq/releases/latest/download/jq-win64.exe
+
 # Run the audit script
 chmod +x scripts/multi-subscription-audit.sh
 ./scripts/multi-subscription-audit.sh
@@ -1265,22 +1485,52 @@ chmod +x scripts/multi-subscription-audit.sh
 PARALLEL_JOBS=10 ./scripts/multi-subscription-audit.sh
 ```
 
+**Script Coverage (aligned with checklist):**
+
+| Checklist Section | Script Function | Output File |
+|-------------------|-----------------|-------------|
+| 2.1 Discovery | `get_all_subscriptions()` | `subscriptions.json`, `subscriptions.csv` |
+| 3.1 Resource Inventory | `audit_subscription()` | `subscriptions/*/all-resources.json` |
+| 7 App Insights | `audit_subscription()` | `subscriptions/*/app-insights.json` |
+| 8 LAW | `audit_subscription()`, `check_law_retention()` | `subscriptions/*/log-analytics.json`, `summary/law-retention.csv` |
+| 6 Tag Compliance | `check_missing_tags()` | `summary/missing-tag-*.csv` |
+| 12 Alerting | `audit_subscription()`, `check_alert_coverage()` | `subscriptions/*/metric-alerts.json`, `summary/alert-coverage.csv` |
+| 15 Policies | `audit_subscription()` | `subscriptions/*/policy-assignments.json` |
+
 **Output structure:**
 ```
 audit-YYYYMMDD-HHMMSS/
+├── AUDIT-REPORT.md             # Executive summary report
 ├── subscriptions.json          # Target subscriptions
+├── subscriptions.csv           # Excel-ready subscription list
 ├── subscriptions/
 │   └── <subscription-id>/
 │       ├── all-resources.json
+│       ├── app-services.json
+│       ├── function-apps.json
 │       ├── app-insights.json
 │       ├── log-analytics.json
+│       ├── action-groups.json
 │       ├── metric-alerts.json
+│       ├── scheduled-query-alerts.json
+│       ├── policy-assignments.json
 │       └── summary.json
 └── summary/
-    ├── totals.json             # Aggregated totals
-    ├── resource-counts.csv     # Excel-ready
-    └── missing-tag-*.csv
+    ├── full-audit-summary.json # Complete aggregated data
+    ├── totals.json             # Grand totals
+    ├── resource-counts.csv     # Excel-ready counts
+    ├── law-retention.csv       # LAW retention settings
+    ├── alert-coverage.csv      # Alert-to-app ratios
+    ├── classic-app-insights.csv # Classic App Insights (if any)
+    └── missing-tag-*.csv       # Tag compliance issues
 ```
+
+**Not covered by script (use interactive queries):**
+- Section 9: Distributed Tracing (KQL queries)
+- Section 10: Sampling Configuration (KQL queries)
+- Section 11: Cost Analysis (KQL queries against LAW Usage table)
+- Section 13: Diagnostic Settings (Resource Graph query)
+- Section 14: RBAC (Resource Graph query)
 
 ---
 

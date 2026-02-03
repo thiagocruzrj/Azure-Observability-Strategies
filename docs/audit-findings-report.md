@@ -23,13 +23,13 @@
 
 | Category | Finding | Severity |
 |----------|---------|----------|
-| Application Insights | 72 App Services without monitoring | 🔴 Critical |
-| Application Insights | 0 App Insights instances in audit scope | 🔴 Critical |
+| Application Insights | 72 App Services missing connection string | 🟠 High |
+| Application Insights | 27 App Insights instances exist (not connected to apps) | 🟡 Medium |
 | Tag Compliance | 994 resources missing required tags | 🟠 High |
 | Alert Coverage | Missing availability & health check alerts | 🟠 High |
 | Alert Coverage | No Function App specific alerts | 🟠 High |
 | Alert Rules | 22 alert rules disabled | 🟡 Medium |
-| Alert Coverage | Missing App Insights-based alerts | 🟡 Medium |
+| RBAC | 111 role assignments across subscriptions | 🟡 Medium |
 
 ---
 
@@ -39,57 +39,76 @@
 
 | Subscription | Web Apps | Function Apps | API Apps | Total |
 |--------------|----------|---------------|----------|-------|
-| EVASM NEU PRO | 10 | 3 | - | 13 |
-| EVASM NEU QA | 12 | 4 | - | 16 |
-| EVASM WUS PRO (LATAM) | 8 | 0 | - | 8 |
-| MAE NEU PRO | 9 | 1 | - | 10 |
-| MAE NEU QA | 9 | 2 | - | 11 |
-| MAE LATAM PRO | 6 | 1 | - | 7 |
-| Edv2 BR QA | 2 | 1 | - | 3 |
-| RecursosInternos-DevOps | 0 | 3 | - | 3 |
-| RecursosInternos-DevOps QA | 0 | 1 | - | 1 |
-| **Total** | **56** | **16** | **15*** | **72** |
-
-> *Note: API Apps counted within Web Apps in az webapp list; total of 72 from Resource Graph query
+| EVASM NEU PRO | 7 | 3 | 3 | 13 |
+| EVASM NEU QA | 8 | 4 | 4 | 16 |
+| EVASM WUS PRO (LATAM) | 5 | 0 | 3 | 8 |
+| MAE NEU PRO | 7 | 1 | 2 | 10 |
+| MAE NEU QA | 7 | 2 | 2 | 11 |
+| MAE LATAM PRO | 5 | 1 | 1 | 7 |
+| Edv2 BR QA | 2 | 1 | 0 | 3 |
+| RecursosInternos-DevOps | 0 | 3 | 0 | 3 |
+| RecursosInternos-DevOps QA | 0 | 1 | 0 | 1 |
+| **Total** | **41** | **16** | **15** | **72** |
 
 ### 1.2 Monitoring Resources (Audit Scope)
 
 | Resource Type | Count | Notes |
 |---------------|-------|-------|
-| Application Insights | 0 | ⚠️ None in audited subscriptions! |
-| Log Analytics Workspaces | 26 | Across 9 subscriptions |
+| Application Insights | 27 | Exist but not connected to most App Services |
+| Log Analytics Workspaces | 26 | Across 8 subscriptions (none in Edv2 BR QA) |
 | Metric Alerts | 211 | Active + Disabled |
 | Scheduled Query Alerts | 5 | Backup failure alerts |
 | Action Groups | 10 | |
-| **Total Resources** | **994** | |
+| Activity Log Alerts | 11 | Service health alerts |
 
-### 1.3 Alert Distribution by Subscription
+### 1.3 Application Insights by Subscription
 
-| Subscription | Metric Alerts | Query Alerts | Action Groups |
-|--------------|---------------|--------------|---------------|
-| EVASM NEU PRO | 52 | 1 | 0 |
-| MAE NEU PRO | 57 | 1 | 1 |
-| EVASM WUS PRO (LATAM) | 47 | 1 | 1 |
-| MAE LATAM PRO | 47 | 1 | 1 |
-| EVASM NEU QA | 3 | 0 | 0 |
-| MAE NEU QA | 1 | 1 | 1 |
-| RecursosInternos-DevOps | 3 | 0 | 5 |
-| RecursosInternos-DevOps QA | 1 | 0 | 0 |
-| Edv2 BR QA | 0 | 0 | 1 |
+| Subscription | App Insights | Notes |
+|--------------|--------------|-------|
+| EVASM NEU PRO | 5 | aievaexneutrz01, aievaexneunpe01, etc. |
+| EVASM NEU QA | 5 | aievaqaneutrz01, aievaqageneu01, etc. |
+| EVASM WUS PRO (LATAM) | 4 | aievaexwustrz01, aievaexwusnpe01, etc. |
+| MAE NEU PRO | 3 | aimaeexneu01, aimaeexneuaprmv01, fnmaeexneudistreports01 |
+| MAE NEU QA | 3 | aimaeqaneu01, aimaeqaneuaprmv01, wamaeqaneuaprmv02 |
+| MAE LATAM PRO | 3 | aimaeexwus01, aimaeexwusaprmv01, aimaepnlexwus01 |
+| RecursosInternos-DevOps | 4 | airintrepeffpro, ais2services, fnglobalcreatejira, etc. |
+| Edv2 BR QA | 0 | ⚠️ No App Insights! |
+| RecursosInternos-DevOps QA | 0 | ⚠️ No App Insights! |
+| **Total** | **27** | |
+
+### 1.4 Alert Distribution by Subscription
+
+| Subscription | Metric Alerts | Query Alerts | Activity Alerts | Action Groups |
+|--------------|---------------|--------------|-----------------|---------------|
+| EVASM NEU PRO | 52 | 1 | 3 | 0 |
+| MAE NEU PRO | 57 | 1 | 1 | 1 |
+| EVASM WUS PRO (LATAM) | 47 | 1 | 2 | 1 |
+| MAE LATAM PRO | 47 | 1 | 1 | 1 |
+| EVASM NEU QA | 3 | 0 | 1 | 0 |
+| MAE NEU QA | 1 | 1 | 1 | 1 |
+| RecursosInternos-DevOps | 3 | 0 | 1 | 5 |
+| RecursosInternos-DevOps QA | 1 | 0 | 0 | 0 |
+| Edv2 BR QA | 0 | 0 | 1 | 1 |
+| **Total** | **211** | **5** | **11** | **10** |
 
 ---
 
 ## 2. Critical Findings
 
-### 2.1 🔴 CRITICAL: All App Services Missing Application Insights
+### 2.1 � HIGH: App Services Missing Application Insights Connection String
 
 **Finding:** All 72 App Services (Web Apps, Function Apps, API Apps) are missing the `APPLICATIONINSIGHTS_CONNECTION_STRING` app setting, meaning they are not sending telemetry to Application Insights.
+
+> **Note:** 27 Application Insights instances exist in the subscriptions, but they are not connected to the App Services. This suggests either:
+> - Legacy configuration using instrumentation key instead of connection string
+> - App Insights created but never configured on the apps
+> - Manual instrumentation in code without platform-level integration
 
 **Impact:**
 - No application-level monitoring (requests, dependencies, exceptions)
 - No distributed tracing capabilities
 - No performance insights (response times, failure rates)
-- Blind to application errors and performance degradation
+- Existing App Insights instances are collecting no data from these apps
 
 **Affected Resources:**
 
@@ -759,14 +778,15 @@ az graph query -q "Resources
 │         │                    │                    │             │
 │         └────────────────────┼────────────────────┘             │
 │                              │                                   │
+│                    ❌ Missing Connection                         │
+│                              │                                   │
 │                              ▼                                   │
 │              ┌───────────────────────────────┐                  │
 │              │    Application Insights (27)  │                  │
 │              │   ┌─────────────────────────┐ │                  │
-│              │   │ • Requests & Exceptions │ │                  │
-│              │   │ • Dependencies          │ │                  │
-│              │   │ • Performance Metrics   │ │                  │
-│              │   │ • Availability Tests    │ │                  │
+│              │   │ ⚠️ NOT CONNECTED TO APPS│ │                  │
+│              │   │ • 0 in Edv2 BR QA       │ │                  │
+│              │   │ • 0 in RecInt-DevOps QA │ │                  │
 │              │   └─────────────────────────┘ │                  │
 │              └──────────────┬────────────────┘                  │
 │                             │                                    │
@@ -774,36 +794,39 @@ az graph query -q "Resources
 │              ┌───────────────────────────────┐                  │
 │              │ Log Analytics Workspaces (26) │                  │
 │              │   ┌─────────────────────────┐ │                  │
-│              │   │ • Centralized Logs      │ │                  │
-│              │   │ • KQL Queries           │ │                  │
-│              │   │ • Workbooks             │ │                  │
+│              │   │ • All workspace-based   │ │                  │
+│              │   │ • 30-day retention      │ │                  │
+│              │   │ • 1x 90-day (managed)   │ │                  │
 │              │   └─────────────────────────┘ │                  │
 │              └──────────────┬────────────────┘                  │
 │                             │                                    │
 │                             ▼                                    │
 │              ┌───────────────────────────────┐                  │
-│              │        Alert Rules            │                  │
+│              │        Alert Rules (227)      │                  │
 │              │   ┌─────────────────────────┐ │                  │
 │              │   │ • Metric Alerts (211)   │ │                  │
-│              │   │ • Log Alerts (5)        │ │                  │
-│              │   │ • Activity Log Alerts   │ │                  │
+│              │   │ • Query Alerts (5)      │ │                  │
+│              │   │ • Activity Alerts (11)  │ │                  │
 │              │   └─────────────────────────┘ │                  │
 │              └──────────────┬────────────────┘                  │
 │                             │                                    │
 │                             ▼                                    │
 │              ┌───────────────────────────────┐                  │
-│              │       Action Groups           │                  │
+│              │      Action Groups (10)       │                  │
 │              │   ┌─────────────────────────┐ │                  │
 │              │   │ • Email Notifications   │ │                  │
-│              │   │ • SMS Alerts            │ │                  │
 │              │   │ • Webhook Integrations  │ │                  │
-│              │   │ • ITSM Integration      │ │                  │
+│              │   │ • Azure Functions       │ │                  │
 │              │   └─────────────────────────┘ │                  │
 │              └───────────────────────────────┘                  │
+│                                                                  │
+│  ⚠️ CRITICAL GAP: 72 App Services missing Connection String    │
+│     configuration to Application Insights (0% coverage)         │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-*Report generated by Azure Observability Strategies audit toolkit*
+*Report generated by Azure Observability Strategies audit toolkit*  
+*Last updated: Query results validated across 9 subscriptions*
