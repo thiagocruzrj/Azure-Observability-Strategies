@@ -35,6 +35,7 @@ artifacts/
 *.snupkg
 *.nuget.props
 *.nuget.targets
+full-audit/
 
 # =============================================================================
 # Publish output

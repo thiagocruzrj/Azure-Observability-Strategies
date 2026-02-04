@@ -97,38 +97,87 @@
 
 ### 2.1 � HIGH: App Services Missing Application Insights Connection String
 
-**Finding:** All 72 App Services (Web Apps, Function Apps, API Apps) are missing the `APPLICATIONINSIGHTS_CONNECTION_STRING` app setting, meaning they are not sending telemetry to Application Insights.
+**Finding:** 16 out of 72 App Services have no App Insights link (via hidden-link tag), while 56 apps have the link configured. However, the method of configuration needs verification:
+- Apps may be using **InstrumentationKey** (legacy, deprecated) instead of **Connection String** (modern)
+- Requires elevated permissions to verify app settings directly
 
-> **Note:** 27 Application Insights instances exist in the subscriptions, but they are not connected to the App Services. This suggests either:
-> - Legacy configuration using instrumentation key instead of connection string
-> - App Insights created but never configured on the apps
-> - Manual instrumentation in code without platform-level integration
+> **Key Discovery:** Using Resource Graph hidden-link tags, we can identify:
+> - **56 apps** (78%) have App Insights resource linked
+> - **16 apps** (22%) have NO App Insights link at all
 
-**Impact:**
+**App Insights Link Status by Subscription:**
+
+| Subscription | Total Apps | With Link | No Link | Coverage |
+|--------------|------------|-----------|---------|----------|
+| EVASM NEU QA | 16 | 14 | 2 | 88% |
+| EVASM WUS PRO | 8 | 7 | 1 | 88% |
+| MAE NEU QA | 11 | 10 | 1 | 91% |
+| MAE LATAM PRO | 7 | 6 | 1 | 86% |
+| MAE NEU PRO | 10 | 8 | 2 | 80% |
+| EVASM NEU PRO | 13 | 8 | 5 | 62% |
+| RecursosInternos-DevOps | 3 | 3 | 0 | 100% |
+| Edv2 BR QA | 3 | 0 | 3 | 0% ⚠️ |
+| RecursosInternos-DevOps QA | 1 | 0 | 1 | 0% ⚠️ |
+| **Total** | **72** | **56** | **16** | **78%** |
+
+**Apps WITHOUT App Insights Link (Priority for Remediation):**
+
+| App Name | Resource Group | Subscription | Kind |
+|----------|----------------|--------------|------|
+| wsmaeqabrsec01 | rgmaeqabr01 | Edv2 BR QA | app |
+| fnmaeqabrpnl01 | rgmaeqabrpnl01 | Edv2 BR QA | functionapp |
+| WeatherDataAPId852d5ff24 | networkwatcherrg | Edv2 BR QA | app |
+| fnrintrepeffqa | rgrintrepeffqa | RecInt-DevOps QA | functionapp,linux |
+| wsevaexneutrzsaveapi01 | rgevaexneutrz | EVASM NEU PRO | app,linux |
+| wsevaexneutrzsave01 | rgevaexneutrz | EVASM NEU PRO | app |
+| wsevaexneutrzpnlapi01 | rgevaexneutrz | EVASM NEU PRO | app,linux |
+| wsevaexneuanot01 | rgevaneuanot | EVASM NEU PRO | app |
+| waevaexneuanotapi01 | rgevaneuanot | EVASM NEU PRO | api |
+| ... and 7 more | | | |
+
+### 2.2 ⚠️ MEDIUM: InstrumentationKey vs Connection String Migration
+
+**Finding:** Apps with App Insights link may be using deprecated InstrumentationKey instead of modern Connection String.
+
+**Background:**
+- **InstrumentationKey** (Legacy): GUID format, deprecated March 2025
+- **Connection String** (Modern): Full endpoint string, supports regional ingestion, Private Link, AAD auth
+
+**Migration Impact:** Low risk - configuration change only, no code changes required
+
+**Recommendation:** Verify app settings and migrate to Connection String:
+1. Check if `APPLICATIONINSIGHTS_CONNECTION_STRING` exists
+2. If only `APPINSIGHTS_INSTRUMENTATIONKEY` exists → migrate to Connection String
+3. Connection String includes the InstrumentationKey, so both can coexist during transition
+
+> **Note:** Verifying app settings requires `Microsoft.Web/sites/config/list/action` permission (Website Contributor role or higher)
+
+---
+
+### 2.3 🟠 HIGH: 16 Apps Completely Without App Insights
+
+**Impact for apps WITHOUT any App Insights link:**
 - No application-level monitoring (requests, dependencies, exceptions)
 - No distributed tracing capabilities
 - No performance insights (response times, failure rates)
-- Existing App Insights instances are collecting no data from these apps
 
-**Affected Resources:**
+**Resolution for Missing App Insights:**
 
-| App Type | Count | Examples |
-|----------|-------|----------|
-| Web App | 41 | wsmaeqaneuloran01, wsmaeexwussec01, wsevaexwustrzsave01 |
-| Function App | 16 | fnrintrepeffqa, fnmaeqaneusincro, fnevaqaneumens01 |
-| API App | 15 | wamaeqaneuaprmv01, waevaqaneunpe01, waevaexwusnpe01 |
-
-**Resolution:**
-
-1. **Deploy Application Insights** for each application or use shared instances per environment
-2. **Configure connection string** via App Settings:
+1. **Create Application Insights** instance (or use existing shared instance)
+2. **Link to App Service** via Azure Portal or CLI:
 
 ```bash
-# For each App Service, add the connection string
+# Get Connection String from existing App Insights
+az monitor app-insights component show \
+  --app <app-insights-name> \
+  --resource-group <rg-name> \
+  --query "connectionString" -o tsv
+
+# Add to App Service
 az webapp config appsettings set \
   --name <app-name> \
   --resource-group <rg-name> \
-  --settings APPLICATIONINSIGHTS_CONNECTION_STRING="InstrumentationKey=<key>;IngestionEndpoint=https://<region>.in.applicationinsights.azure.com/"
+  --settings APPLICATIONINSIGHTS_CONNECTION_STRING="<connection-string>"
 
 # For Function Apps
 az functionapp config appsettings set \

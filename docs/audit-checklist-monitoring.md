@@ -530,21 +530,104 @@ Resources
 | 7.2.7 | Unique App Insights per component | 1:1 mapping | | | |
 | 7.2.8 | Daily cap configured (cost control) | If budget limited | | | |
 
-### 7.3 Connection String vs Instrumentation Key Check
+### 7.3 Connection String vs Instrumentation Key Analysis
+
+> **IMPORTANT:** Microsoft deprecated InstrumentationKey-only configuration in March 2025. Apps should use Connection String.
+
+#### Key Differences
+
+| Aspect | InstrumentationKey (Legacy) | Connection String (Modern) |
+|--------|----------------------------|---------------------------|
+| **Format** | GUID only | Full string with endpoints |
+| **Regional Ingestion** | ❌ Global endpoint only | ✅ Regional endpoints |
+| **Private Link (AMPLS)** | ❌ Not supported | ✅ Required |
+| **AAD Authentication** | ❌ Not supported | ✅ Supported |
+| **Future Support** | ⚠️ Deprecated | ✅ Recommended |
+
+#### Migration Impact
+- **Low risk**: Just configuration change, no code changes required
+- **Recommendation**: Migrate all apps from `APPINSIGHTS_INSTRUMENTATIONKEY` to `APPLICATIONINSIGHTS_CONNECTION_STRING`
+
+#### Check Commands (Requires Website Contributor Role)
 
 ```bash
-# Check App Services for modern connection string usage
-az webapp list --query "[].{
-  Name:name,
-  ResourceGroup:resourceGroup
-}" -o tsv | while read name rg; do
-  echo "=== $name ==="
-  az webapp config appsettings list -n "$name" -g "$rg" \
-    --query "[?name=='APPLICATIONINSIGHTS_CONNECTION_STRING' || name=='APPINSIGHTS_INSTRUMENTATIONKEY'].{Setting:name, HasValue:value!=null}" -o table
-done
+# NOTE: These commands require 'Microsoft.Web/sites/config/list/action' permission
+# If you only have Reader role, ask the app team to run these or request elevated access
 
-# CRITICAL: Apps using only APPINSIGHTS_INSTRUMENTATIONKEY should migrate to connection string
+# Check a specific app's App Insights configuration
+az webapp config appsettings list -n "<app-name>" -g "<resource-group>" \
+  --query "[?contains(name, 'APPINSIGHTS') || contains(name, 'APPLICATIONINSIGHTS')].{
+    Setting:name,
+    HasValue:value!=null
+  }" -o table
+
+# Bulk check all apps (requires permissions)
+for sub in $ALL_SUBS; do
+  echo "=== Subscription: ${sub:0:8}... ==="
+  az webapp list --subscription "$sub" --query "[].{name:name,rg:resourceGroup}" -o tsv 2>/dev/null | while read name rg; do
+    settings=$(az webapp config appsettings list -n "$name" -g "$rg" --subscription "$sub" \
+      --query "[?name=='APPINSIGHTS_INSTRUMENTATIONKEY' || name=='APPLICATIONINSIGHTS_CONNECTION_STRING'].name" -o tsv 2>/dev/null | tr '\n' ',')
+    
+    if [[ "$settings" == *"CONNECTION_STRING"* ]] && [[ "$settings" == *"INSTRUMENTATIONKEY"* ]]; then
+      echo "⚠️  BOTH: $name (has legacy + modern)"
+    elif [[ "$settings" == *"CONNECTION_STRING"* ]]; then
+      echo "✅ MODERN: $name"
+    elif [[ "$settings" == *"INSTRUMENTATIONKEY"* ]]; then
+      echo "🔴 LEGACY: $name (needs migration)"
+    else
+      echo "❌ NONE: $name (no App Insights)"
+    fi
+  done
+done
 ```
+
+#### Alternative: Resource Graph Query for Linked Resources
+
+```bash
+# Check which App Services have App Insights resource linked (via ARM)
+# This checks the resource link, not app settings
+az graph query -q "
+  resources
+  | where type =~ 'microsoft.web/sites'
+  | extend appInsightsKey = tostring(tags['hidden-link: /app-insights-resource-id'])
+  | project name, resourceGroup, subscriptionId, 
+      hasAppInsightsLink = isnotempty(appInsightsKey)
+  | summarize 
+      total=count(),
+      withLink=countif(hasAppInsightsLink == true),
+      withoutLink=countif(hasAppInsightsLink == false)
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# Summary by subscription
+az graph query -q "
+  resources
+  | where type =~ 'microsoft.web/sites'
+  | extend hasAppInsightsLink = tags contains 'hidden-link'
+  | summarize total=count(),
+      linked=countif(hasAppInsightsLink == true),
+      notLinked=countif(hasAppInsightsLink == false) by subscriptionId
+  | order by subscriptionId
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+
+# List apps WITHOUT App Insights link (priority for remediation)
+az graph query -q "
+  resources
+  | where type =~ 'microsoft.web/sites'
+  | where not(tags contains 'hidden-link')
+  | project name, resourceGroup, subscriptionId, kind
+  | order by subscriptionId, name
+" --subscriptions $ALL_SUBS --first 1000 --query "data" -o table
+```
+
+#### 7.3.1 Instrumentation Key Migration Checklist
+
+| # | Check | Status |
+|---|-------|--------|
+| 7.3.1.1 | Identify apps using only APPINSIGHTS_INSTRUMENTATIONKEY | |
+| 7.3.1.2 | Get Connection String from linked App Insights | |
+| 7.3.1.3 | Add APPLICATIONINSIGHTS_CONNECTION_STRING setting | |
+| 7.3.1.4 | Test telemetry flows correctly | |
+| 7.3.1.5 | Remove APPINSIGHTS_INSTRUMENTATIONKEY (optional) | |
 
 ### 7.4 App Insights to App Service Mapping
 
