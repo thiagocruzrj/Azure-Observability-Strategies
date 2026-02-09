@@ -1,0 +1,15 @@
+# =============================================================================
+# Staging Configuration (Update before use)
+# =============================================================================
+
+subscription_id = "YOUR-STAGING-SUBSCRIPTION-ID"
+
+project_name = "contoso"
+location     = "eastus"
+
+owner       = "your-email@company.com"
+cost_center = "CC-STAGING"
+
+alert_email_recipients = [
+  "your-email@company.com"
+]
